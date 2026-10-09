@@ -1,8 +1,9 @@
 from datetime import date
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import selectinload
 
 from app.billing import apply_payment, generate_bills_for_lease
@@ -16,6 +17,7 @@ from app.models import (
     Payment,
     RentalBill,
     RentalProperty,
+    RentalUnit,
     TenantProfile,
     User,
     UserRole,
@@ -36,6 +38,9 @@ from app.schemas import (
     TenantRead,
     TenantUpdate,
     Token,
+    UnitCreate,
+    UnitRead,
+    UnitUpdate,
     UserCreate,
     UserRead,
 )
@@ -43,6 +48,10 @@ from app.security import create_access_token, hash_password, verify_password
 
 
 Base.metadata.create_all(bind=engine)
+with engine.begin() as connection:
+    columns = {column["name"] for column in inspect(connection).get_columns("leases")}
+    if "unit_id" not in columns:
+        connection.execute(text("ALTER TABLE leases ADD COLUMN unit_id INTEGER"))
 
 settings = get_settings()
 app = FastAPI(title="Rental Management API", version="1.0.0")
@@ -60,6 +69,7 @@ def serialize_lease(lease: Lease) -> LeaseRead:
         id=lease.id,
         landlord_id=lease.landlord_id,
         property_id=lease.property_id,
+        unit_id=lease.unit_id,
         start_date=lease.start_date,
         end_date=lease.end_date,
         monthly_rent=lease.monthly_rent,
@@ -90,6 +100,20 @@ def get_tenant_or_404(db: DbSession, landlord: LandlordProfile, tenant_id: int) 
     if tenant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
     return tenant
+
+
+def get_unit_or_404(db: DbSession, landlord: LandlordProfile, unit_id: int) -> RentalUnit:
+    unit = db.scalar(
+        select(RentalUnit)
+        .join(RentalProperty, RentalUnit.property_id == RentalProperty.id)
+        .where(
+            RentalUnit.id == unit_id,
+            RentalProperty.landlord_id == landlord.id,
+        )
+    )
+    if unit is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unit not found")
+    return unit
 
 
 def get_lease_or_404(db: DbSession, landlord: LandlordProfile, lease_id: int) -> Lease:
@@ -141,6 +165,15 @@ def load_landlord_tenants(db: DbSession, landlord: LandlordProfile, tenant_ids: 
 def ensure_lease_dates(start_date: date, end_date: date) -> None:
     if end_date < start_date:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="end_date must be on or after start_date")
+
+
+def validate_lease_unit(db: DbSession, landlord: LandlordProfile, property_id: int, unit_id: Optional[int]) -> None:
+    get_property_or_404(db, landlord, property_id)
+    if unit_id is None:
+        return
+    unit = get_unit_or_404(db, landlord, unit_id)
+    if unit.property_id != property_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unit must belong to the selected property")
 
 
 @app.get("/health")
@@ -228,6 +261,70 @@ def delete_property(property_id: int, db: DbSession, landlord: Landlord) -> Resp
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@app.post("/properties/{property_id}/units", response_model=UnitRead, status_code=status.HTTP_201_CREATED)
+def create_unit(property_id: int, payload: UnitCreate, db: DbSession, landlord: Landlord) -> RentalUnit:
+    get_property_or_404(db, landlord, property_id)
+    duplicate = db.scalar(
+        select(RentalUnit).where(RentalUnit.property_id == property_id, RentalUnit.name == payload.name)
+    )
+    if duplicate:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unit name already exists for this property")
+    unit = RentalUnit(property_id=property_id, **payload.model_dump())
+    db.add(unit)
+    db.commit()
+    db.refresh(unit)
+    return unit
+
+
+@app.get("/properties/{property_id}/units", response_model=list[UnitRead])
+def list_property_units(property_id: int, db: DbSession, landlord: Landlord) -> list[RentalUnit]:
+    get_property_or_404(db, landlord, property_id)
+    return list(db.scalars(select(RentalUnit).where(RentalUnit.property_id == property_id)))
+
+
+@app.get("/units", response_model=list[UnitRead])
+def list_units(db: DbSession, landlord: Landlord) -> list[RentalUnit]:
+    return list(
+        db.scalars(
+            select(RentalUnit)
+            .join(RentalProperty, RentalUnit.property_id == RentalProperty.id)
+            .where(RentalProperty.landlord_id == landlord.id)
+        )
+    )
+
+
+@app.patch("/units/{unit_id}", response_model=UnitRead)
+def update_unit(unit_id: int, payload: UnitUpdate, db: DbSession, landlord: Landlord) -> RentalUnit:
+    unit = get_unit_or_404(db, landlord, unit_id)
+    updates = payload.model_dump(exclude_unset=True)
+    if "name" in updates:
+        duplicate = db.scalar(
+            select(RentalUnit).where(
+                RentalUnit.property_id == unit.property_id,
+                RentalUnit.name == updates["name"],
+                RentalUnit.id != unit.id,
+            )
+        )
+        if duplicate:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unit name already exists for this property")
+    for field, value in updates.items():
+        setattr(unit, field, value)
+    db.commit()
+    db.refresh(unit)
+    return unit
+
+
+@app.delete("/units/{unit_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_unit(unit_id: int, db: DbSession, landlord: Landlord) -> Response:
+    unit = get_unit_or_404(db, landlord, unit_id)
+    linked_lease = db.scalar(select(Lease.id).where(Lease.unit_id == unit.id))
+    if linked_lease:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unit has leases and cannot be deleted")
+    db.delete(unit)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @app.post("/tenants", response_model=TenantRead, status_code=status.HTTP_201_CREATED)
 def create_tenant(payload: TenantCreate, db: DbSession, landlord: Landlord) -> TenantProfile:
     if payload.user_id is not None:
@@ -295,12 +392,13 @@ def delete_tenant(tenant_id: int, db: DbSession, landlord: Landlord) -> Response
 
 @app.post("/leases", response_model=LeaseRead, status_code=status.HTTP_201_CREATED)
 def create_lease(payload: LeaseCreate, db: DbSession, landlord: Landlord) -> LeaseRead:
-    get_property_or_404(db, landlord, payload.property_id)
+    validate_lease_unit(db, landlord, payload.property_id, payload.unit_id)
     load_landlord_tenants(db, landlord, payload.tenant_ids)
 
     lease = Lease(
         landlord_id=landlord.id,
         property_id=payload.property_id,
+        unit_id=payload.unit_id,
         start_date=payload.start_date,
         end_date=payload.end_date,
         monthly_rent=payload.monthly_rent,
@@ -339,9 +437,12 @@ def update_lease(lease_id: int, payload: LeaseUpdate, db: DbSession, landlord: L
     lease = get_lease_or_404(db, landlord, lease_id)
     updates = payload.model_dump(exclude_unset=True)
 
-    if "property_id" in updates:
-        get_property_or_404(db, landlord, updates["property_id"])
-        lease.property_id = updates["property_id"]
+    next_property_id = updates.get("property_id", lease.property_id)
+    next_unit_id = updates.get("unit_id", lease.unit_id)
+    if "property_id" in updates or "unit_id" in updates:
+        validate_lease_unit(db, landlord, next_property_id, next_unit_id)
+        lease.property_id = next_property_id
+        lease.unit_id = next_unit_id
     if "start_date" in updates:
         lease.start_date = updates["start_date"]
     if "end_date" in updates:

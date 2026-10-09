@@ -4,6 +4,7 @@ import {
   Bill,
   Lease,
   RentalProperty,
+  RentalUnit,
   Tenant,
   User,
   UserRole,
@@ -14,7 +15,7 @@ import {
 } from "./api";
 import "./styles.css";
 
-type Tab = "properties" | "tenants" | "leases" | "bills";
+type Tab = "properties" | "units" | "tenants" | "leases" | "bills";
 
 type PropertyForm = {
   name: string;
@@ -29,8 +30,15 @@ type TenantForm = {
   notes: string;
 };
 
+type UnitForm = {
+  property_id: string;
+  name: string;
+  description: string;
+};
+
 type LeaseForm = {
   property_id: string;
+  unit_id: string;
   tenant_ids: string[];
   start_date: string;
   end_date: string;
@@ -40,8 +48,10 @@ type LeaseForm = {
 
 const emptyProperty: PropertyForm = { name: "", address: "", description: "" };
 const emptyTenant: TenantForm = { full_name: "", email: "", phone: "", notes: "" };
+const emptyUnit: UnitForm = { property_id: "", name: "", description: "" };
 const emptyLease: LeaseForm = {
   property_id: "",
+  unit_id: "",
   tenant_ids: [],
   start_date: "",
   end_date: "",
@@ -60,13 +70,16 @@ function App() {
   });
   const [activeTab, setActiveTab] = useState<Tab>("properties");
   const [properties, setProperties] = useState<RentalProperty[]>([]);
+  const [units, setUnits] = useState<RentalUnit[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [leases, setLeases] = useState<Lease[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [propertyForm, setPropertyForm] = useState<PropertyForm>(emptyProperty);
+  const [unitForm, setUnitForm] = useState<UnitForm>(emptyUnit);
   const [tenantForm, setTenantForm] = useState<TenantForm>(emptyTenant);
   const [leaseForm, setLeaseForm] = useState<LeaseForm>(emptyLease);
   const [editingPropertyId, setEditingPropertyId] = useState<number | null>(null);
+  const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
   const [editingTenantId, setEditingTenantId] = useState<number | null>(null);
   const [editingLeaseId, setEditingLeaseId] = useState<number | null>(null);
   const [tenantDropdownOpen, setTenantDropdownOpen] = useState(false);
@@ -78,6 +91,11 @@ function App() {
   const propertyNameById = useMemo(
     () => new Map(properties.map((property) => [property.id, property.name])),
     [properties],
+  );
+  const unitNameById = useMemo(() => new Map(units.map((unit) => [unit.id, unit.name])), [units]);
+  const unitsForLeaseProperty = useMemo(
+    () => units.filter((unit) => String(unit.property_id) === leaseForm.property_id),
+    [leaseForm.property_id, units],
   );
   const tenantNameById = useMemo(() => new Map(tenants.map((tenant) => [tenant.id, tenant.full_name])), [tenants]);
   const availableLeaseTenants = useMemo(() => {
@@ -126,13 +144,15 @@ function App() {
   }
 
   async function loadLandlordData() {
-    const [nextProperties, nextTenants, nextLeases, nextBills] = await Promise.all([
+    const [nextProperties, nextUnits, nextTenants, nextLeases, nextBills] = await Promise.all([
       api.listProperties(),
+      api.listUnits(),
       api.listTenants(),
       api.listLeases(),
       api.listBills(),
     ]);
     setProperties(nextProperties);
+    setUnits(nextUnits);
     setTenants(nextTenants);
     setLeases(nextLeases);
     setBills(nextBills);
@@ -158,6 +178,7 @@ function App() {
     clearToken();
     setUser(null);
     setProperties([]);
+    setUnits([]);
     setTenants([]);
     setLeases([]);
     setBills([]);
@@ -177,6 +198,24 @@ function App() {
       setEditingPropertyId(null);
       await loadLandlordData();
     }, editingPropertyId ? "Property updated." : "Property added.");
+  }
+
+  async function submitUnit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await withStatus(async () => {
+      const payload = {
+        name: unitForm.name,
+        description: unitForm.description || undefined,
+      };
+      if (editingUnitId) {
+        await api.updateUnit(editingUnitId, payload);
+      } else {
+        await api.createUnit(Number(unitForm.property_id), payload);
+      }
+      setUnitForm(emptyUnit);
+      setEditingUnitId(null);
+      await loadLandlordData();
+    }, editingUnitId ? "Unit updated." : "Unit added.");
   }
 
   async function submitTenant(event: FormEvent<HTMLFormElement>) {
@@ -210,6 +249,7 @@ function App() {
     await withStatus(async () => {
       const payload = {
         property_id: Number(leaseForm.property_id),
+        unit_id: leaseForm.unit_id ? Number(leaseForm.unit_id) : null,
         tenant_ids: tenantIds,
         start_date: leaseForm.start_date,
         end_date: leaseForm.end_date,
@@ -349,7 +389,7 @@ function App() {
       ) : (
         <>
           <nav className="tabs">
-            {(["properties", "tenants", "leases", "bills"] as Tab[]).map((tab) => (
+            {(["properties", "units", "tenants", "leases", "bills"] as Tab[]).map((tab) => (
               <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>
                 {tab}
               </button>
@@ -409,6 +449,78 @@ function App() {
                           Edit
                         </button>
                         <button onClick={() => withStatus(() => api.deleteProperty(property.id).then(loadLandlordData), "Property deleted.")}>
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </DataTable>
+              </section>
+            </section>
+          )}
+
+          {activeTab === "units" && (
+            <section className="grid">
+              <form onSubmit={submitUnit} className="card form">
+                <h2>{editingUnitId ? "Edit Unit" : "Add Unit"}</h2>
+                <label>
+                  Property
+                  <select
+                    required
+                    disabled={Boolean(editingUnitId)}
+                    value={unitForm.property_id}
+                    onChange={(event) => setUnitForm({ ...unitForm, property_id: event.target.value })}
+                  >
+                    <option value="">Select property</option>
+                    {properties.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {property.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Unit name
+                  <input
+                    required
+                    placeholder="Example: Unit 101"
+                    value={unitForm.name}
+                    onChange={(event) => setUnitForm({ ...unitForm, name: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Description
+                  <textarea
+                    value={unitForm.description}
+                    onChange={(event) => setUnitForm({ ...unitForm, description: event.target.value })}
+                  />
+                </label>
+                <button disabled={loading} className="primary">
+                  {editingUnitId ? "Save Unit" : "Add Unit"}
+                </button>
+              </form>
+              <section className="card">
+                <h2>Units</h2>
+                <DataTable empty="No units yet. Add units under a property.">
+                  {units.map((unit) => (
+                    <tr key={unit.id}>
+                      <td>{unit.name}</td>
+                      <td>{propertyNameById.get(unit.property_id) ?? `Property #${unit.property_id}`}</td>
+                      <td>{unit.description || "-"}</td>
+                      <td className="actions">
+                        <button
+                          onClick={() => {
+                            setEditingUnitId(unit.id);
+                            setUnitForm({
+                              property_id: String(unit.property_id),
+                              name: unit.name,
+                              description: unit.description ?? "",
+                            });
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button onClick={() => withStatus(() => api.deleteUnit(unit.id).then(loadLandlordData), "Unit deleted.")}>
                           Delete
                         </button>
                       </td>
@@ -494,12 +606,29 @@ function App() {
                   <select
                     required
                     value={leaseForm.property_id}
-                    onChange={(event) => setLeaseForm({ ...leaseForm, property_id: event.target.value })}
+                    onChange={(event) => setLeaseForm({ ...leaseForm, property_id: event.target.value, unit_id: "" })}
                   >
                     <option value="">Select property</option>
                     {properties.map((property) => (
                       <option key={property.id} value={property.id}>
                         {property.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Unit
+                  <select
+                    value={leaseForm.unit_id}
+                    disabled={!leaseForm.property_id || unitsForLeaseProperty.length === 0}
+                    onChange={(event) => setLeaseForm({ ...leaseForm, unit_id: event.target.value })}
+                  >
+                    <option value="">
+                      {unitsForLeaseProperty.length === 0 ? "No units for selected property" : "Whole property / no unit"}
+                    </option>
+                    {unitsForLeaseProperty.map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.name}
                       </option>
                     ))}
                   </select>
@@ -601,6 +730,7 @@ function App() {
                     <tr key={lease.id}>
                       <td>#{lease.id}</td>
                       <td>{propertyNameById.get(lease.property_id) ?? `Property #${lease.property_id}`}</td>
+                      <td>{lease.unit_id ? (unitNameById.get(lease.unit_id) ?? `Unit #${lease.unit_id}`) : "Whole property"}</td>
                       <td>{lease.tenant_ids.map((id) => tenantNameById.get(id) ?? `#${id}`).join(", ")}</td>
                       <td>
                         {lease.start_date} to {lease.end_date}
@@ -612,6 +742,7 @@ function App() {
                             setEditingLeaseId(lease.id);
                             setLeaseForm({
                               property_id: String(lease.property_id),
+                              unit_id: lease.unit_id ? String(lease.unit_id) : "",
                               tenant_ids: lease.tenant_ids.map(String),
                               start_date: lease.start_date,
                               end_date: lease.end_date,

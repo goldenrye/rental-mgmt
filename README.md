@@ -7,8 +7,9 @@ Cloud-ready rental management application with a FastAPI backend and React front
 - Register users as `landlord` or `tenant`
 - Authenticate with JWT bearer tokens
 - Landlords can create, list, update, and delete rental properties
+- Landlords can create, list, update, and delete multiple units under each property
 - Landlords can create, list, update, and delete managed tenants
-- Landlords can create, list, update, and delete leases that bind tenants to a property
+- Landlords can create, list, update, and delete leases that bind tenants to a property or a specific unit
 - Active leases can generate monthly rental bills
 - Payments are recorded against bills with paid amount and paid time
 - Bill balance and status are recalculated after every payment
@@ -146,6 +147,11 @@ curl http://localhost:8000/bills \
 - `GET /properties/{property_id}`
 - `PATCH /properties/{property_id}`
 - `DELETE /properties/{property_id}`
+- `POST /properties/{property_id}/units`
+- `GET /properties/{property_id}/units`
+- `GET /units`
+- `PATCH /units/{unit_id}`
+- `DELETE /units/{unit_id}`
 - `POST /tenants`
 - `GET /tenants`
 - `GET /tenants/{tenant_id}`

@@ -15,6 +15,13 @@ export type RentalProperty = {
   description?: string | null;
 };
 
+export type RentalUnit = {
+  id: number;
+  property_id: number;
+  name: string;
+  description?: string | null;
+};
+
 export type Tenant = {
   id: number;
   user_id?: number | null;
@@ -29,6 +36,7 @@ export type Lease = {
   id: number;
   landlord_id: number;
   property_id: number;
+  unit_id?: number | null;
   start_date: string;
   end_date: string;
   monthly_rent: string;
@@ -125,6 +133,13 @@ export const api = {
   updateProperty: (id: number, payload: Partial<Pick<RentalProperty, "name" | "address" | "description">>) =>
     request<RentalProperty>(`/properties/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteProperty: (id: number) => request<void>(`/properties/${id}`, { method: "DELETE" }),
+  listUnits: () => request<RentalUnit[]>("/units"),
+  listPropertyUnits: (propertyId: number) => request<RentalUnit[]>(`/properties/${propertyId}/units`),
+  createUnit: (propertyId: number, payload: { name: string; description?: string }) =>
+    request<RentalUnit>(`/properties/${propertyId}/units`, { method: "POST", body: JSON.stringify(payload) }),
+  updateUnit: (id: number, payload: Partial<Pick<RentalUnit, "name" | "description">>) =>
+    request<RentalUnit>(`/units/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteUnit: (id: number) => request<void>(`/units/${id}`, { method: "DELETE" }),
   listTenants: () => request<Tenant[]>("/tenants"),
   createTenant: (payload: { full_name: string; email?: string; phone?: string; notes?: string }) =>
     request<Tenant>("/tenants", { method: "POST", body: JSON.stringify(payload) }),
@@ -134,6 +149,7 @@ export const api = {
   listLeases: () => request<Lease[]>("/leases"),
   createLease: (payload: {
     property_id: number;
+    unit_id?: number | null;
     tenant_ids: number[];
     start_date: string;
     end_date: string;

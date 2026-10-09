@@ -54,6 +54,27 @@ class PropertyRead(PropertyBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UnitBase(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = None
+
+
+class UnitCreate(UnitBase):
+    pass
+
+
+class UnitUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = None
+
+
+class UnitRead(UnitBase):
+    id: int
+    property_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TenantBase(BaseModel):
     full_name: str = Field(min_length=1, max_length=255)
     email: Optional[EmailStr] = None
@@ -82,6 +103,7 @@ class TenantRead(TenantBase):
 
 class LeaseBase(BaseModel):
     property_id: int
+    unit_id: Optional[int] = None
     start_date: date
     end_date: date
     monthly_rent: Decimal = Field(gt=0, decimal_places=2)
@@ -101,6 +123,7 @@ class LeaseCreate(LeaseBase):
 
 class LeaseUpdate(BaseModel):
     property_id: Optional[int] = None
+    unit_id: Optional[int] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     monthly_rent: Optional[Decimal] = Field(default=None, gt=0, decimal_places=2)
@@ -118,6 +141,7 @@ class LeaseRead(BaseModel):
     id: int
     landlord_id: int
     property_id: int
+    unit_id: Optional[int]
     start_date: date
     end_date: date
     monthly_rent: Decimal

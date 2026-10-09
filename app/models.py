@@ -77,7 +77,21 @@ class RentalProperty(Base):
     description: Mapped[Optional[str]] = mapped_column(Text)
 
     landlord: Mapped["LandlordProfile"] = relationship(back_populates="properties")
+    units: Mapped[List["RentalUnit"]] = relationship(back_populates="property", cascade="all, delete-orphan")
     leases: Mapped[List["Lease"]] = relationship(back_populates="property")
+
+
+class RentalUnit(Base):
+    __tablename__ = "rental_units"
+    __table_args__ = (UniqueConstraint("property_id", "name", name="uq_property_unit_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    property_id: Mapped[int] = mapped_column(ForeignKey("rental_properties.id"), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+
+    property: Mapped["RentalProperty"] = relationship(back_populates="units")
+    leases: Mapped[List["Lease"]] = relationship(back_populates="unit")
 
 
 class Lease(Base):
@@ -86,6 +100,7 @@ class Lease(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), index=True, nullable=False)
     property_id: Mapped[int] = mapped_column(ForeignKey("rental_properties.id"), index=True, nullable=False)
+    unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("rental_units.id"), index=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     monthly_rent: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -94,6 +109,7 @@ class Lease(Base):
 
     landlord: Mapped["LandlordProfile"] = relationship(back_populates="leases")
     property: Mapped["RentalProperty"] = relationship(back_populates="leases")
+    unit: Mapped[Optional["RentalUnit"]] = relationship(back_populates="leases")
     tenants: Mapped[List["LeaseTenant"]] = relationship(back_populates="lease", cascade="all, delete-orphan")
     bills: Mapped[List["RentalBill"]] = relationship(back_populates="lease", cascade="all, delete-orphan")
 
