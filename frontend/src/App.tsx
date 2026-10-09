@@ -3,6 +3,7 @@ import type { FormEvent, ReactNode } from "react";
 import {
   Bill,
   Lease,
+  Payment,
   RentalProperty,
   RentalUnit,
   Tenant,
@@ -16,6 +17,13 @@ import {
 import "./styles.css";
 
 type Tab = "properties" | "units" | "tenants" | "leases" | "bills";
+const tabLabels: Record<Tab, string> = {
+  properties: "properties",
+  units: "units",
+  tenants: "tenants",
+  leases: "leases",
+  bills: "rental",
+};
 
 type PropertyForm = {
   name: string;
@@ -59,6 +67,16 @@ const emptyLease: LeaseForm = {
   notes: "",
 };
 
+function splitMonthlyRent(monthlyRent: string, tenantCount: number): string[] {
+  if (tenantCount <= 0) {
+    return [];
+  }
+  const totalCents = Math.round(Number(monthlyRent || 0) * 100);
+  const baseShare = Math.floor(totalCents / tenantCount);
+  const remainder = totalCents % tenantCount;
+  return Array.from({ length: tenantCount }, (_, index) => ((baseShare + (index < remainder ? 1 : 0)) / 100).toFixed(2));
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -74,6 +92,7 @@ function App() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [leases, setLeases] = useState<Lease[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [showHistoricPaidBills, setShowHistoricPaidBills] = useState(false);
   const [propertyForm, setPropertyForm] = useState<PropertyForm>(emptyProperty);
   const [unitForm, setUnitForm] = useState<UnitForm>(emptyUnit);
@@ -83,6 +102,7 @@ function App() {
   const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
   const [editingTenantId, setEditingTenantId] = useState<number | null>(null);
   const [editingLeaseId, setEditingLeaseId] = useState<number | null>(null);
+  const [selectedPaymentTenantId, setSelectedPaymentTenantId] = useState<number | null>(null);
   const [tenantDropdownOpen, setTenantDropdownOpen] = useState(false);
   const [paymentByBill, setPaymentByBill] = useState<Record<number, { amount: string; paid_at: string; note: string }>>({});
   const [message, setMessage] = useState("");
@@ -129,6 +149,18 @@ function App() {
     [bills, showHistoricPaidBills],
   );
   const hiddenPaidBillCount = bills.length - visibleBills.length;
+  const billById = useMemo(() => new Map(bills.map((bill) => [bill.id, bill])), [bills]);
+  const selectedPaymentTenant = useMemo(
+    () => tenants.find((tenant) => tenant.id === selectedPaymentTenantId) ?? null,
+    [selectedPaymentTenantId, tenants],
+  );
+  const selectedTenantPayments = useMemo(
+    () =>
+      payments
+        .filter((payment) => payment.tenant_id === selectedPaymentTenantId)
+        .sort((first, second) => new Date(second.paid_at).getTime() - new Date(first.paid_at).getTime()),
+    [payments, selectedPaymentTenantId],
+  );
 
   useEffect(() => {
     if (!getStoredToken()) {
@@ -168,18 +200,20 @@ function App() {
   }
 
   async function loadLandlordData() {
-    const [nextProperties, nextUnits, nextTenants, nextLeases, nextBills] = await Promise.all([
+    const [nextProperties, nextUnits, nextTenants, nextLeases, nextBills, nextPayments] = await Promise.all([
       api.listProperties(),
       api.listUnits(),
       api.listTenants(),
       api.listLeases(),
       api.listBills(),
+      api.listPayments(),
     ]);
     setProperties(nextProperties);
     setUnits(nextUnits);
     setTenants(nextTenants);
     setLeases(nextLeases);
     setBills(nextBills);
+    setPayments(nextPayments);
   }
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
@@ -206,6 +240,8 @@ function App() {
     setTenants([]);
     setLeases([]);
     setBills([]);
+    setPayments([]);
+    setSelectedPaymentTenantId(null);
     setTenantDropdownOpen(false);
     setMessage("Signed out.");
   }
@@ -269,19 +305,20 @@ function App() {
       setMessage("");
       return;
     }
-    const rentTotal = leaseForm.tenants.reduce((total, tenant) => total + Number(tenant.monthly_rent || 0), 0);
-    if (Math.round(rentTotal * 100) !== Math.round(Number(leaseForm.monthly_rent || 0) * 100)) {
-      setError("Tenant monthly rents must add up to the lease monthly rent.");
+    const monthlyRentCents = Math.round(Number(leaseForm.monthly_rent || 0) * 100);
+    if (monthlyRentCents <= 0) {
+      setError("Please enter a valid lease monthly rent.");
       setMessage("");
       return;
     }
+    const tenantRentShares = splitMonthlyRent(leaseForm.monthly_rent, leaseForm.tenants.length);
     await withStatus(async () => {
       const payload = {
         property_id: Number(leaseForm.property_id),
         unit_id: leaseForm.unit_id ? Number(leaseForm.unit_id) : null,
-        tenants: leaseForm.tenants.map((tenant) => ({
+        tenants: leaseForm.tenants.map((tenant, index) => ({
           tenant_id: Number(tenant.tenant_id),
-          monthly_rent: tenant.monthly_rent,
+          monthly_rent: tenantRentShares[index],
           deposit: tenant.deposit || "0",
         })),
         start_date: leaseForm.start_date,
@@ -311,11 +348,11 @@ function App() {
     }));
   }
 
-  function updateLeaseTenantTerm(tenantId: number, field: "monthly_rent" | "deposit", value: string) {
+  function updateLeaseTenantDeposit(tenantId: number, value: string) {
     setLeaseForm((current) => ({
       ...current,
       tenants: current.tenants.map((tenant) =>
-        tenant.tenant_id === String(tenantId) ? { ...tenant, [field]: value } : tenant,
+        tenant.tenant_id === String(tenantId) ? { ...tenant, deposit: value } : tenant,
       ),
     }));
   }
@@ -324,7 +361,7 @@ function App() {
     await withStatus(async () => {
       await api.generateCurrentBills();
       setBills(await api.listBills());
-    }, "Bills generated for currently active leases.");
+    }, "Rental generated for currently active leases.");
   }
 
   async function recordPayment(billId: number) {
@@ -336,7 +373,9 @@ function App() {
         note: payment.note || undefined,
       });
       setPaymentByBill((current) => ({ ...current, [billId]: { amount: "", paid_at: "", note: "" } }));
-      setBills(await api.listBills());
+      const [nextBills, nextPayments] = await Promise.all([api.listBills(), api.listPayments()]);
+      setBills(nextBills);
+      setPayments(nextPayments);
     }, "Payment recorded and balance updated.");
   }
 
@@ -345,7 +384,7 @@ function App() {
       <main className="auth-shell">
         <section className="auth-card">
           <p className="eyebrow">Rental Management</p>
-          <h1>Manage leases, bills, and payments</h1>
+          <h1>Manage leases, rental, and payments</h1>
           <p className="muted">Sign in as a landlord to manage properties and tenants, or register a tenant account.</p>
           <div className="toggle">
             <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>
@@ -426,14 +465,14 @@ function App() {
       {user.role !== "landlord" ? (
         <section className="card">
           <h2>Tenant Portal</h2>
-          <p className="muted">Tenant bill viewing is available through the backend API at /tenant/bills.</p>
+          <p className="muted">Tenant rental viewing is available through the backend API at /tenant/bills.</p>
         </section>
       ) : (
         <>
           <nav className="tabs">
             {(["properties", "units", "tenants", "leases", "bills"] as Tab[]).map((tab) => (
               <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>
-                {tab}
+                {tabLabels[tab]}
               </button>
             ))}
           </nav>
@@ -739,12 +778,12 @@ function App() {
                     )}
                   </div>
                   <span className="help-text">
-                    Tenants already used by another lease are hidden. Click a selected chip to remove it, then enter rent and deposit.
+                    Tenants already used by another lease are hidden. Click a selected chip to remove it, then enter deposit.
                   </span>
                 </label>
                 {selectedLeaseTenants.length > 0 && (
                   <div className="tenant-terms">
-                    <h3>Tenant rent and deposit</h3>
+                    <h3>Tenant deposit</h3>
                     {selectedLeaseTenants.map((tenant) => {
                       const terms = leaseForm.tenants.find((term) => term.tenant_id === String(tenant.id));
                       return (
@@ -753,20 +792,11 @@ function App() {
                           <input
                             required
                             type="number"
-                            min="0.01"
-                            step="0.01"
-                            placeholder="Monthly rent"
-                            value={terms?.monthly_rent ?? ""}
-                            onChange={(event) => updateLeaseTenantTerm(tenant.id, "monthly_rent", event.target.value)}
-                          />
-                          <input
-                            required
-                            type="number"
                             min="0"
                             step="0.01"
                             placeholder="Deposit"
                             value={terms?.deposit ?? ""}
-                            onChange={(event) => updateLeaseTenantTerm(tenant.id, "deposit", event.target.value)}
+                            onChange={(event) => updateLeaseTenantDeposit(tenant.id, event.target.value)}
                           />
                         </div>
                       );
@@ -872,7 +902,7 @@ function App() {
           {activeTab === "bills" && (
             <section className="card">
               <div className="card-header">
-                <h2>Bills & Payments</h2>
+                <h2>Rental & Payments</h2>
                 <div className="header-actions">
                   <label className="inline-checkbox">
                     <input
@@ -880,23 +910,58 @@ function App() {
                       checked={showHistoricPaidBills}
                       onChange={(event) => setShowHistoricPaidBills(event.target.checked)}
                     />
-                    Show historic paid bills
+                    Show historic paid rental
                   </label>
                   <button className="primary" disabled={loading} onClick={generateBills}>
-                    Generate Current Bills
+                    Generate Current Rental
                   </button>
                 </div>
               </div>
               {!showHistoricPaidBills && hiddenPaidBillCount > 0 && (
-                <p className="help-text">{hiddenPaidBillCount} paid bill(s) hidden. Enable "Show historic paid bills" to view them.</p>
+                <p className="help-text">{hiddenPaidBillCount} paid rental record(s) hidden. Enable "Show historic paid rental" to view them.</p>
               )}
-              <DataTable empty="No bills to show. Generate bills after creating an active lease or enable historic paid bills.">
+              {selectedPaymentTenant && (
+                <section className="payment-history">
+                  <div className="card-header">
+                    <div>
+                      <h3>{selectedPaymentTenant.full_name} payment history</h3>
+                      <p className="help-text">All recorded payments for this tenant.</p>
+                    </div>
+                    <button className="secondary" onClick={() => setSelectedPaymentTenantId(null)}>
+                      Close
+                    </button>
+                  </div>
+                  <DataTable empty="No payment history for this tenant yet.">
+                    {selectedTenantPayments.map((payment) => {
+                      const paymentBill = billById.get(payment.bill_id);
+                      return (
+                        <tr key={payment.id}>
+                          <td>#{payment.id}</td>
+                          <td>{new Date(payment.paid_at).toLocaleString()}</td>
+                          <td>${payment.amount}</td>
+                          <td>
+                            {paymentBill
+                              ? `${paymentBill.bill_year}-${String(paymentBill.bill_month).padStart(2, "0")}`
+                              : `Rental #${payment.bill_id}`}
+                          </td>
+                          <td>{payment.note || "-"}</td>
+                        </tr>
+                      );
+                    })}
+                  </DataTable>
+                </section>
+              )}
+              <DataTable empty="No rental records to show. Generate rental after creating an active lease or enable historic paid rental.">
                 {visibleBills.map((bill) => {
                   const payment = paymentByBill[bill.id] ?? { amount: "", paid_at: "", note: "" };
                   return (
                     <tr key={bill.id}>
                       <td>#{bill.id}</td>
-                      <td>{tenantNameById.get(bill.tenant_id) ?? `Tenant #${bill.tenant_id}`}</td>
+                      <td>
+                        <button className="link-button" onClick={() => setSelectedPaymentTenantId(bill.tenant_id)}>
+                          {tenantNameById.get(bill.tenant_id) ?? `Tenant #${bill.tenant_id}`}
+                        </button>
+                      </td>
                       <td>
                         {bill.bill_year}-{String(bill.bill_month).padStart(2, "0")}
                       </td>
@@ -945,11 +1010,11 @@ function App() {
                         </button>
                         <button
                           onClick={() =>
-                            confirmDelete(`bill #${bill.id}`) &&
-                            withStatus(() => api.deleteBill(bill.id).then(loadLandlordData), "Bill deleted.")
+                            confirmDelete(`rental record #${bill.id}`) &&
+                            withStatus(() => api.deleteBill(bill.id).then(loadLandlordData), "Rental record deleted.")
                           }
                         >
-                          Delete Bill
+                          Delete Rental
                         </button>
                       </td>
                     </tr>

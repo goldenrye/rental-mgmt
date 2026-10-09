@@ -169,6 +169,7 @@ export const api = {
   generateCurrentBills: () => request<Bill[]>("/bills/generate-current-month", { method: "POST" }),
   listBills: () => request<Bill[]>("/bills"),
   deleteBill: (id: number) => request<void>(`/bills/${id}`, { method: "DELETE" }),
+  listPayments: () => request<Payment[]>("/payments"),
   recordPayment: (billId: number, payload: { amount: string; paid_at?: string; note?: string }) =>
     request<{ payment: Payment; bill: Bill }>(`/bills/${billId}/payments`, {
       method: "POST",
