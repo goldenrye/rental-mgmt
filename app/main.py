@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.billing import apply_payment, generate_bills_for_lease
 from app.config import get_settings
-from app.database import Base, engine
+from app.database import Base, database_url, engine
 from app.deps import CurrentUser, DbSession, Landlord
 from app.models import (
     LandlordProfile,
@@ -62,6 +62,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def log_database_location() -> None:
+    print(f"Rental Management database: {database_url}")
 
 
 def serialize_lease(lease: Lease) -> LeaseRead:
@@ -518,6 +523,14 @@ def list_bills(db: DbSession, landlord: Landlord) -> list[RentalBill]:
 @app.get("/bills/{bill_id}", response_model=BillRead)
 def get_bill(bill_id: int, db: DbSession, landlord: Landlord) -> RentalBill:
     return get_bill_or_404(db, landlord, bill_id)
+
+
+@app.delete("/bills/{bill_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_bill(bill_id: int, db: DbSession, landlord: Landlord) -> Response:
+    bill = get_bill_or_404(db, landlord, bill_id)
+    db.delete(bill)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.post("/bills/{bill_id}/payments", response_model=PaymentResult, status_code=status.HTTP_201_CREATED)

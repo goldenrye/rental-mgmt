@@ -3,6 +3,7 @@
 __pycache__/
 *.py[cod]
 rental_mgmt.db*
+data/
 .vscode/
 
 frontend/.env

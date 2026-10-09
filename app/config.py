@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Rental Management API"
-    database_url: str = "sqlite:///./rental_mgmt.db"
+    database_url: str = "sqlite:///./data/rental_mgmt.db"
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24

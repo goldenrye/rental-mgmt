@@ -825,6 +825,9 @@ function App() {
                         <button disabled={loading || !payment.amount} onClick={() => recordPayment(bill.id)}>
                           Pay
                         </button>
+                        <button onClick={() => withStatus(() => api.deleteBill(bill.id).then(loadLandlordData), "Bill deleted.")}>
+                          Delete Bill
+                        </button>
                       </td>
                     </tr>
                   );

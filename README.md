@@ -29,6 +29,14 @@ uvicorn app.main:app --reload
 
 Open the API docs at [http://localhost:8000/docs](http://localhost:8000/docs).
 
+By default, local data is stored in `data/rental_mgmt.db` under the project root. The application resolves relative SQLite paths against the project root, so restarting `uvicorn` from another directory still uses the same local database file. On startup, the backend prints the resolved database URL as `Rental Management database: ...`.
+
+To confirm which database file the app is using and how many records it contains:
+
+```bash
+python scripts/db_status.py
+```
+
 ## Run Frontend Locally
 
 In a second terminal:
@@ -166,6 +174,7 @@ curl http://localhost:8000/bills \
 - `POST /bills/generate-current-month`
 - `GET /bills`
 - `GET /bills/{bill_id}`
+- `DELETE /bills/{bill_id}`
 - `POST /bills/{bill_id}/payments`
 - `GET /payments`
 - `GET /tenant/bills`
