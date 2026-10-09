@@ -99,6 +99,18 @@ function App() {
     [leaseForm.property_id, units],
   );
   const tenantNameById = useMemo(() => new Map(tenants.map((tenant) => [tenant.id, tenant.full_name])), [tenants]);
+  const tenantDepositPaidById = useMemo(() => {
+    const depositByTenant = new Map<number, number>();
+    leases.forEach((lease) => {
+      lease.tenants.forEach((tenantTerm) => {
+        depositByTenant.set(
+          tenantTerm.tenant_id,
+          (depositByTenant.get(tenantTerm.tenant_id) ?? 0) + Number(tenantTerm.deposit || 0),
+        );
+      });
+    });
+    return depositByTenant;
+  }, [leases]);
   const availableLeaseTenants = useMemo(() => {
     const assignedTenantIds = new Set(
       leases
@@ -612,6 +624,7 @@ function App() {
                       <td>{tenant.full_name}</td>
                       <td>{tenant.email || "-"}</td>
                       <td>{tenant.phone || "-"}</td>
+                      <td>${(tenantDepositPaidById.get(tenant.id) ?? 0).toFixed(2)} deposit paid</td>
                       <td className="actions">
                         <button
                           onClick={() => {
