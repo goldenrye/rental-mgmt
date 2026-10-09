@@ -137,10 +137,16 @@ function App() {
         setMessage(successMessage);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unexpected error");
+      const errorMessage = err instanceof Error ? err.message : "Unexpected error";
+      setError(errorMessage);
+      window.alert(errorMessage);
     } finally {
       setLoading(false);
     }
+  }
+
+  function confirmDelete(itemName: string): boolean {
+    return window.confirm(`Delete ${itemName}? This action cannot be undone.`);
   }
 
   async function loadLandlordData() {
@@ -448,7 +454,12 @@ function App() {
                         >
                           Edit
                         </button>
-                        <button onClick={() => withStatus(() => api.deleteProperty(property.id).then(loadLandlordData), "Property deleted.")}>
+                        <button
+                          onClick={() =>
+                            confirmDelete(`property "${property.name}"`) &&
+                            withStatus(() => api.deleteProperty(property.id).then(loadLandlordData), "Property deleted.")
+                          }
+                        >
                           Delete
                         </button>
                       </td>
@@ -520,7 +531,12 @@ function App() {
                         >
                           Edit
                         </button>
-                        <button onClick={() => withStatus(() => api.deleteUnit(unit.id).then(loadLandlordData), "Unit deleted.")}>
+                        <button
+                          onClick={() =>
+                            confirmDelete(`unit "${unit.name}"`) &&
+                            withStatus(() => api.deleteUnit(unit.id).then(loadLandlordData), "Unit deleted.")
+                          }
+                        >
                           Delete
                         </button>
                       </td>
@@ -586,7 +602,12 @@ function App() {
                         >
                           Edit
                         </button>
-                        <button onClick={() => withStatus(() => api.deleteTenant(tenant.id).then(loadLandlordData), "Tenant deleted.")}>
+                        <button
+                          onClick={() =>
+                            confirmDelete(`tenant "${tenant.full_name}"`) &&
+                            withStatus(() => api.deleteTenant(tenant.id).then(loadLandlordData), "Tenant deleted.")
+                          }
+                        >
                           Delete
                         </button>
                       </td>
@@ -753,7 +774,12 @@ function App() {
                         >
                           Edit
                         </button>
-                        <button onClick={() => withStatus(() => api.deleteLease(lease.id).then(loadLandlordData), "Lease deleted.")}>
+                        <button
+                          onClick={() =>
+                            confirmDelete(`lease #${lease.id}`) &&
+                            withStatus(() => api.deleteLease(lease.id).then(loadLandlordData), "Lease deleted.")
+                          }
+                        >
                           Delete
                         </button>
                       </td>
@@ -825,7 +851,12 @@ function App() {
                         <button disabled={loading || !payment.amount} onClick={() => recordPayment(bill.id)}>
                           Pay
                         </button>
-                        <button onClick={() => withStatus(() => api.deleteBill(bill.id).then(loadLandlordData), "Bill deleted.")}>
+                        <button
+                          onClick={() =>
+                            confirmDelete(`bill #${bill.id}`) &&
+                            withStatus(() => api.deleteBill(bill.id).then(loadLandlordData), "Bill deleted.")
+                          }
+                        >
                           Delete Bill
                         </button>
                       </td>

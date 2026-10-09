@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import inspect, select, text
+from sqlalchemy import inspect, or_, select, text
 from sqlalchemy.orm import selectinload
 
 from app.billing import apply_payment, generate_bills_for_lease
@@ -179,6 +179,41 @@ def validate_lease_unit(db: DbSession, landlord: LandlordProfile, property_id: i
     unit = get_unit_or_404(db, landlord, unit_id)
     if unit.property_id != property_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unit must belong to the selected property")
+
+
+def assert_no_overlapping_lease(
+    db: DbSession,
+    landlord: LandlordProfile,
+    property_id: int,
+    unit_id: Optional[int],
+    start_date: date,
+    end_date: date,
+    exclude_lease_id: Optional[int] = None,
+) -> None:
+    query = select(Lease).where(
+        Lease.landlord_id == landlord.id,
+        Lease.property_id == property_id,
+        Lease.start_date <= end_date,
+        Lease.end_date >= start_date,
+    )
+    if exclude_lease_id is not None:
+        query = query.where(Lease.id != exclude_lease_id)
+    if unit_id is not None:
+        query = query.where(or_(Lease.unit_id == unit_id, Lease.unit_id.is_(None)))
+
+    overlapping_lease = db.scalar(query.limit(1))
+    if overlapping_lease is None:
+        return
+
+    target = "this property" if unit_id is None else "this property and unit"
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            f"There is another lease already associated with {target} "
+            f"that overlaps this lease period: lease #{overlapping_lease.id} "
+            f"({overlapping_lease.start_date} to {overlapping_lease.end_date})."
+        ),
+    )
 
 
 @app.get("/health")
@@ -398,6 +433,7 @@ def delete_tenant(tenant_id: int, db: DbSession, landlord: Landlord) -> Response
 @app.post("/leases", response_model=LeaseRead, status_code=status.HTTP_201_CREATED)
 def create_lease(payload: LeaseCreate, db: DbSession, landlord: Landlord) -> LeaseRead:
     validate_lease_unit(db, landlord, payload.property_id, payload.unit_id)
+    assert_no_overlapping_lease(db, landlord, payload.property_id, payload.unit_id, payload.start_date, payload.end_date)
     load_landlord_tenants(db, landlord, payload.tenant_ids)
 
     lease = Lease(
@@ -453,6 +489,15 @@ def update_lease(lease_id: int, payload: LeaseUpdate, db: DbSession, landlord: L
     if "end_date" in updates:
         lease.end_date = updates["end_date"]
     ensure_lease_dates(lease.start_date, lease.end_date)
+    assert_no_overlapping_lease(
+        db,
+        landlord,
+        lease.property_id,
+        lease.unit_id,
+        lease.start_date,
+        lease.end_date,
+        exclude_lease_id=lease.id,
+    )
     if "monthly_rent" in updates:
         lease.monthly_rent = updates["monthly_rent"]
     if "notes" in updates:
