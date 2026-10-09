@@ -134,6 +134,28 @@ td:first-child {
   color: #66728a;
 }
 
+.header-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.inline-checkbox {
+  align-items: center;
+  color: #334155;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.9rem;
+  font-weight: 700;
+  gap: 8px;
+}
+
+.inline-checkbox input {
+  width: auto;
+}
+
 .help-text {
   color: #66728a;
   font-size: 0.8rem;
@@ -349,5 +371,10 @@ td:first-child {
   .card-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .header-actions {
+    align-items: stretch;
+    justify-content: flex-start;
   }
 }

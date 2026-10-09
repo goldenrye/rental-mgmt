@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import suppress
 from datetime import date
 from typing import Optional
 
@@ -6,9 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, or_, select, text
 from sqlalchemy.orm import selectinload
 
-from app.billing import apply_payment, generate_bills_for_lease
+from app.billing import apply_payment, generate_bills_for_lease, month_window
 from app.config import get_settings
-from app.database import Base, database_url, engine
+from app.database import Base, SessionLocal, database_url, engine
 from app.deps import CurrentUser, DbSession, Landlord
 from app.models import (
     LandlordProfile,
@@ -55,6 +57,7 @@ with engine.begin() as connection:
 
 settings = get_settings()
 app = FastAPI(title="Rental Management API", version="1.0.0")
+monthly_bill_scheduler_task: Optional[asyncio.Task[None]] = None
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -67,6 +70,58 @@ app.add_middleware(
 @app.on_event("startup")
 def log_database_location() -> None:
     print(f"Rental Management database: {database_url}")
+
+
+def load_billable_leases(db: DbSession, billing_date: date, landlord_id: Optional[int] = None) -> list[Lease]:
+    period_start, period_end = month_window(billing_date)
+    query = (
+        select(Lease)
+        .options(selectinload(Lease.tenants))
+        .where(
+            Lease.start_date <= period_end,
+            Lease.end_date >= period_start,
+        )
+    )
+    if landlord_id is not None:
+        query = query.where(Lease.landlord_id == landlord_id)
+    return list(db.scalars(query))
+
+
+def generate_monthly_bills(db: DbSession, billing_date: Optional[date] = None, landlord_id: Optional[int] = None) -> list[RentalBill]:
+    target_date = billing_date or date.today()
+    bills: list[RentalBill] = []
+    for lease in load_billable_leases(db, target_date, landlord_id):
+        bills.extend(generate_bills_for_lease(db, lease, target_date))
+    return bills
+
+
+async def monthly_bill_scheduler() -> None:
+    last_run: Optional[date] = None
+    while True:
+        today = date.today()
+        if today.day == 1 and last_run != today:
+            with SessionLocal() as db:
+                bills = generate_monthly_bills(db, today)
+                db.commit()
+                if bills:
+                    print(f"Generated {len(bills)} monthly rental bill(s) for {today:%Y-%m}.")
+            last_run = today
+        await asyncio.sleep(60 * 60)
+
+
+@app.on_event("startup")
+async def start_monthly_bill_scheduler() -> None:
+    global monthly_bill_scheduler_task
+    monthly_bill_scheduler_task = asyncio.create_task(monthly_bill_scheduler())
+
+
+@app.on_event("shutdown")
+async def stop_monthly_bill_scheduler() -> None:
+    if monthly_bill_scheduler_task is None:
+        return
+    monthly_bill_scheduler_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await monthly_bill_scheduler_task
 
 
 def serialize_lease(lease: Lease) -> LeaseRead:
@@ -451,8 +506,7 @@ def create_lease(payload: LeaseCreate, db: DbSession, landlord: Landlord) -> Lea
         db.add(LeaseTenant(lease_id=lease.id, tenant_id=tenant_id))
     db.flush()
     db.refresh(lease, attribute_names=["tenants"])
-    if lease.start_date <= date.today() <= lease.end_date:
-        generate_bills_for_lease(db, lease)
+    generate_bills_for_lease(db, lease)
     db.commit()
     db.refresh(lease, attribute_names=["tenants"])
     return serialize_lease(lease)
@@ -511,8 +565,7 @@ def update_lease(lease_id: int, payload: LeaseUpdate, db: DbSession, landlord: L
 
     db.flush()
     db.refresh(lease, attribute_names=["tenants"])
-    if lease.start_date <= date.today() <= lease.end_date:
-        generate_bills_for_lease(db, lease)
+    generate_bills_for_lease(db, lease)
     db.commit()
     db.refresh(lease, attribute_names=["tenants"])
     return serialize_lease(lease)
@@ -540,20 +593,7 @@ def generate_lease_bills(lease_id: int, db: DbSession, landlord: Landlord) -> li
 
 @app.post("/bills/generate-current-month", response_model=list[BillRead])
 def generate_current_month_bills(db: DbSession, landlord: Landlord) -> list[RentalBill]:
-    leases = list(
-        db.scalars(
-            select(Lease)
-            .options(selectinload(Lease.tenants))
-            .where(
-                Lease.landlord_id == landlord.id,
-                Lease.start_date <= date.today(),
-                Lease.end_date >= date.today(),
-            )
-        )
-    )
-    bills: list[RentalBill] = []
-    for lease in leases:
-        bills.extend(generate_bills_for_lease(db, lease))
+    bills = generate_monthly_bills(db, landlord_id=landlord.id)
     db.commit()
     for bill in bills:
         db.refresh(bill)

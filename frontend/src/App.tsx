@@ -74,6 +74,7 @@ function App() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [leases, setLeases] = useState<Lease[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [showHistoricPaidBills, setShowHistoricPaidBills] = useState(false);
   const [propertyForm, setPropertyForm] = useState<PropertyForm>(emptyProperty);
   const [unitForm, setUnitForm] = useState<UnitForm>(emptyUnit);
   const [tenantForm, setTenantForm] = useState<TenantForm>(emptyTenant);
@@ -111,6 +112,11 @@ function App() {
     () => tenants.filter((tenant) => leaseForm.tenant_ids.includes(String(tenant.id))),
     [leaseForm.tenant_ids, tenants],
   );
+  const visibleBills = useMemo(
+    () => bills.filter((bill) => showHistoricPaidBills || bill.status !== "paid"),
+    [bills, showHistoricPaidBills],
+  );
+  const hiddenPaidBillCount = bills.length - visibleBills.length;
 
   useEffect(() => {
     if (!getStoredToken()) {
@@ -794,12 +800,25 @@ function App() {
             <section className="card">
               <div className="card-header">
                 <h2>Bills & Payments</h2>
-                <button className="primary" disabled={loading} onClick={generateBills}>
-                  Generate Current Bills
-                </button>
+                <div className="header-actions">
+                  <label className="inline-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={showHistoricPaidBills}
+                      onChange={(event) => setShowHistoricPaidBills(event.target.checked)}
+                    />
+                    Show historic paid bills
+                  </label>
+                  <button className="primary" disabled={loading} onClick={generateBills}>
+                    Generate Current Bills
+                  </button>
+                </div>
               </div>
-              <DataTable empty="No bills yet. Generate bills after creating an active lease.">
-                {bills.map((bill) => {
+              {!showHistoricPaidBills && hiddenPaidBillCount > 0 && (
+                <p className="help-text">{hiddenPaidBillCount} paid bill(s) hidden. Enable "Show historic paid bills" to view them.</p>
+              )}
+              <DataTable empty="No bills to show. Generate bills after creating an active lease or enable historic paid bills.">
+                {visibleBills.map((bill) => {
                   const payment = paymentByBill[bill.id] ?? { amount: "", paid_at: "", note: "" };
                   return (
                     <tr key={bill.id}>

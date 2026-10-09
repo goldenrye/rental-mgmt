@@ -17,6 +17,8 @@ Cloud-ready rental management application with a FastAPI backend and React front
 
 For leases with multiple tenants, the monthly rent is split equally across bound tenants.
 
+Bill generation is current-month only. When a lease starts or ends mid-month, the bill is prorated by active lease days in that month. The backend also runs an in-process scheduler that automatically generates the current month bill on the 1st day of each month.
+
 ## Run Backend Locally
 
 ```bash

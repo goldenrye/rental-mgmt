@@ -22,6 +22,11 @@ def monthly_due_date(year: int, month: int, preferred_day: int) -> date:
     return date(year, month, min(preferred_day, last_day))
 
 
+def month_window(billing_date: date) -> tuple[date, date]:
+    last_day = monthrange(billing_date.year, billing_date.month)[1]
+    return date(billing_date.year, billing_date.month, 1), date(billing_date.year, billing_date.month, last_day)
+
+
 def iter_months(start: date, end: date) -> list[tuple[int, int]]:
     cursor_year = start.year
     cursor_month = start.month
@@ -42,6 +47,12 @@ def split_rent(monthly_rent: Decimal, tenant_count: int) -> Decimal:
     return money(monthly_rent / Decimal(tenant_count))
 
 
+def prorate_monthly_rent(monthly_rent: Decimal, active_start: date, active_end: date) -> Decimal:
+    days_in_month = Decimal(monthrange(active_start.year, active_start.month)[1])
+    active_days = Decimal((active_end - active_start).days + 1)
+    return money(monthly_rent * active_days / days_in_month)
+
+
 def refresh_bill_status(bill: RentalBill) -> None:
     bill.amount_paid = money(bill.amount_paid)
     bill.balance = money(bill.amount_due - bill.amount_paid)
@@ -54,47 +65,48 @@ def refresh_bill_status(bill: RentalBill) -> None:
         bill.status = BillStatus.open.value
 
 
-def generate_bills_for_lease(db: Session, lease: Lease, through: Optional[date] = None) -> list[RentalBill]:
-    through = through or date.today()
-    if lease.start_date > through:
+def generate_bills_for_lease(db: Session, lease: Lease, billing_date: Optional[date] = None) -> list[RentalBill]:
+    billing_date = billing_date or date.today()
+    period_start, period_end = month_window(billing_date)
+    if lease.start_date > period_end or lease.end_date < period_start:
         return []
 
-    generation_end = min(lease.end_date, through)
     tenant_ids = [lease_tenant.tenant_id for lease_tenant in lease.tenants]
     if not tenant_ids:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lease must have at least one tenant")
 
-    amount_due = split_rent(lease.monthly_rent, len(tenant_ids))
+    active_start = max(lease.start_date, period_start)
+    active_end = min(lease.end_date, period_end)
+    amount_due = split_rent(prorate_monthly_rent(lease.monthly_rent, active_start, active_end), len(tenant_ids))
     bills: list[RentalBill] = []
 
-    for bill_year, bill_month in iter_months(lease.start_date, generation_end):
-        for tenant_id in tenant_ids:
-            existing = db.scalar(
-                select(RentalBill).where(
-                    RentalBill.lease_id == lease.id,
-                    RentalBill.tenant_id == tenant_id,
-                    RentalBill.bill_year == bill_year,
-                    RentalBill.bill_month == bill_month,
-                )
+    for tenant_id in tenant_ids:
+        existing = db.scalar(
+            select(RentalBill).where(
+                RentalBill.lease_id == lease.id,
+                RentalBill.tenant_id == tenant_id,
+                RentalBill.bill_year == billing_date.year,
+                RentalBill.bill_month == billing_date.month,
             )
-            if existing:
-                bills.append(existing)
-                continue
+        )
+        if existing:
+            bills.append(existing)
+            continue
 
-            bill = RentalBill(
-                landlord_id=lease.landlord_id,
-                lease_id=lease.id,
-                tenant_id=tenant_id,
-                bill_year=bill_year,
-                bill_month=bill_month,
-                due_date=monthly_due_date(bill_year, bill_month, lease.start_date.day),
-                amount_due=amount_due,
-                amount_paid=Decimal("0.00"),
-                balance=amount_due,
-                status=BillStatus.open.value,
-            )
-            db.add(bill)
-            bills.append(bill)
+        bill = RentalBill(
+            landlord_id=lease.landlord_id,
+            lease_id=lease.id,
+            tenant_id=tenant_id,
+            bill_year=billing_date.year,
+            bill_month=billing_date.month,
+            due_date=active_start,
+            amount_due=amount_due,
+            amount_paid=Decimal("0.00"),
+            balance=amount_due,
+            status=BillStatus.open.value,
+        )
+        db.add(bill)
+        bills.append(bill)
 
     db.flush()
     return bills
