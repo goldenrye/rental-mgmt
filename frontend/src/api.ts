@@ -41,7 +41,14 @@ export type Lease = {
   end_date: string;
   monthly_rent: string;
   tenant_ids: number[];
+  tenants: LeaseTenantTerms[];
   notes?: string | null;
+};
+
+export type LeaseTenantTerms = {
+  tenant_id: number;
+  monthly_rent: string;
+  deposit: string;
 };
 
 export type Bill = {
@@ -150,7 +157,7 @@ export const api = {
   createLease: (payload: {
     property_id: number;
     unit_id?: number | null;
-    tenant_ids: number[];
+    tenants: LeaseTenantTerms[];
     start_date: string;
     end_date: string;
     monthly_rent: string;

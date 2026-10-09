@@ -121,6 +121,8 @@ class LeaseTenant(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     lease_id: Mapped[int] = mapped_column(ForeignKey("leases.id"), index=True, nullable=False)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenant_profiles.id"), index=True, nullable=False)
+    monthly_rent: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    deposit: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
 
     lease: Mapped["Lease"] = relationship(back_populates="tenants")
     tenant: Mapped["TenantProfile"] = relationship(back_populates="leases")

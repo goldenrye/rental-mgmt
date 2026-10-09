@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import suppress
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Response, status
@@ -54,6 +55,39 @@ with engine.begin() as connection:
     columns = {column["name"] for column in inspect(connection).get_columns("leases")}
     if "unit_id" not in columns:
         connection.execute(text("ALTER TABLE leases ADD COLUMN unit_id INTEGER"))
+    lease_tenant_columns = {column["name"] for column in inspect(connection).get_columns("lease_tenants")}
+    if "monthly_rent" not in lease_tenant_columns:
+        connection.execute(text("ALTER TABLE lease_tenants ADD COLUMN monthly_rent NUMERIC(12, 2) NOT NULL DEFAULT 0"))
+    if "deposit" not in lease_tenant_columns:
+        connection.execute(text("ALTER TABLE lease_tenants ADD COLUMN deposit NUMERIC(12, 2) NOT NULL DEFAULT 0"))
+    connection.execute(
+        text(
+            """
+            UPDATE lease_tenants
+            SET monthly_rent = (
+                SELECT ROUND(leases.monthly_rent / tenant_counts.tenant_count, 2)
+                FROM leases
+                JOIN (
+                    SELECT lease_id, COUNT(*) AS tenant_count
+                    FROM lease_tenants
+                    GROUP BY lease_id
+                ) AS tenant_counts ON tenant_counts.lease_id = leases.id
+                WHERE leases.id = lease_tenants.lease_id
+            )
+            WHERE monthly_rent = 0
+              AND lease_id IN (
+                SELECT leases.id
+                FROM leases
+                JOIN (
+                    SELECT lease_id, COUNT(*) AS tenant_count
+                    FROM lease_tenants
+                    GROUP BY lease_id
+                ) AS tenant_counts ON tenant_counts.lease_id = leases.id
+                WHERE tenant_counts.tenant_count > 0
+              )
+            """
+        )
+    )
 
 settings = get_settings()
 app = FastAPI(title="Rental Management API", version="1.0.0")
@@ -134,6 +168,14 @@ def serialize_lease(lease: Lease) -> LeaseRead:
         end_date=lease.end_date,
         monthly_rent=lease.monthly_rent,
         tenant_ids=[lease_tenant.tenant_id for lease_tenant in lease.tenants],
+        tenants=[
+            {
+                "tenant_id": lease_tenant.tenant_id,
+                "monthly_rent": lease_tenant.monthly_rent,
+                "deposit": lease_tenant.deposit,
+            }
+            for lease_tenant in lease.tenants
+        ],
         notes=lease.notes,
     )
 
@@ -220,6 +262,25 @@ def load_landlord_tenants(db: DbSession, landlord: LandlordProfile, tenant_ids: 
     if len(tenants) != len(tenant_ids):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="One or more tenants were not found")
     return tenants
+
+
+def tenant_term_value(tenant_term, field: str):
+    if isinstance(tenant_term, dict):
+        return tenant_term[field]
+    return getattr(tenant_term, field)
+
+
+def validate_lease_tenant_terms(db: DbSession, landlord: LandlordProfile, tenant_terms: list) -> None:
+    load_landlord_tenants(db, landlord, [tenant_term_value(tenant, "tenant_id") for tenant in tenant_terms])
+
+
+def ensure_tenant_rents_match_monthly_rent(tenant_terms: list, monthly_rent) -> None:
+    rent_total = sum((tenant_term_value(tenant, "monthly_rent") for tenant in tenant_terms), start=Decimal("0.00"))
+    if rent_total != monthly_rent:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant monthly rents must add up to lease monthly rent",
+        )
 
 
 def ensure_lease_dates(start_date: date, end_date: date) -> None:
@@ -489,7 +550,7 @@ def delete_tenant(tenant_id: int, db: DbSession, landlord: Landlord) -> Response
 def create_lease(payload: LeaseCreate, db: DbSession, landlord: Landlord) -> LeaseRead:
     validate_lease_unit(db, landlord, payload.property_id, payload.unit_id)
     assert_no_overlapping_lease(db, landlord, payload.property_id, payload.unit_id, payload.start_date, payload.end_date)
-    load_landlord_tenants(db, landlord, payload.tenant_ids)
+    validate_lease_tenant_terms(db, landlord, payload.tenants)
 
     lease = Lease(
         landlord_id=landlord.id,
@@ -502,8 +563,15 @@ def create_lease(payload: LeaseCreate, db: DbSession, landlord: Landlord) -> Lea
     )
     db.add(lease)
     db.flush()
-    for tenant_id in payload.tenant_ids:
-        db.add(LeaseTenant(lease_id=lease.id, tenant_id=tenant_id))
+    for tenant in payload.tenants:
+        db.add(
+            LeaseTenant(
+                lease_id=lease.id,
+                tenant_id=tenant_term_value(tenant, "tenant_id"),
+                monthly_rent=tenant_term_value(tenant, "monthly_rent"),
+                deposit=tenant_term_value(tenant, "deposit"),
+            )
+        )
     db.flush()
     db.refresh(lease, attribute_names=["tenants"])
     generate_bills_for_lease(db, lease)
@@ -552,16 +620,29 @@ def update_lease(lease_id: int, payload: LeaseUpdate, db: DbSession, landlord: L
         lease.end_date,
         exclude_lease_id=lease.id,
     )
+    next_monthly_rent = updates.get("monthly_rent", lease.monthly_rent)
+    next_tenants = updates.get("tenants")
+    if next_tenants is not None:
+        validate_lease_tenant_terms(db, landlord, next_tenants)
+        ensure_tenant_rents_match_monthly_rent(next_tenants, next_monthly_rent)
+    elif "monthly_rent" in updates:
+        ensure_tenant_rents_match_monthly_rent(lease.tenants, next_monthly_rent)
     if "monthly_rent" in updates:
-        lease.monthly_rent = updates["monthly_rent"]
+        lease.monthly_rent = next_monthly_rent
     if "notes" in updates:
         lease.notes = updates["notes"]
-    if "tenant_ids" in updates:
-        load_landlord_tenants(db, landlord, updates["tenant_ids"])
+    if next_tenants is not None:
         lease.tenants.clear()
         db.flush()
-        for tenant_id in updates["tenant_ids"]:
-            lease.tenants.append(LeaseTenant(lease_id=lease.id, tenant_id=tenant_id))
+        for tenant in next_tenants:
+            lease.tenants.append(
+                LeaseTenant(
+                    lease_id=lease.id,
+                    tenant_id=tenant_term_value(tenant, "tenant_id"),
+                    monthly_rent=tenant_term_value(tenant, "monthly_rent"),
+                    deposit=tenant_term_value(tenant, "deposit"),
+                )
+            )
 
     db.flush()
     db.refresh(lease, attribute_names=["tenants"])

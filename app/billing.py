@@ -71,16 +71,17 @@ def generate_bills_for_lease(db: Session, lease: Lease, billing_date: Optional[d
     if lease.start_date > period_end or lease.end_date < period_start:
         return []
 
-    tenant_ids = [lease_tenant.tenant_id for lease_tenant in lease.tenants]
-    if not tenant_ids:
+    lease_tenants = list(lease.tenants)
+    if not lease_tenants:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lease must have at least one tenant")
 
     active_start = max(lease.start_date, period_start)
     active_end = min(lease.end_date, period_end)
-    amount_due = split_rent(prorate_monthly_rent(lease.monthly_rent, active_start, active_end), len(tenant_ids))
     bills: list[RentalBill] = []
 
-    for tenant_id in tenant_ids:
+    for lease_tenant in lease_tenants:
+        tenant_id = lease_tenant.tenant_id
+        amount_due = prorate_monthly_rent(lease_tenant.monthly_rent, active_start, active_end)
         existing = db.scalar(
             select(RentalBill).where(
                 RentalBill.lease_id == lease.id,

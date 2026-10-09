@@ -39,7 +39,7 @@ type UnitForm = {
 type LeaseForm = {
   property_id: string;
   unit_id: string;
-  tenant_ids: string[];
+  tenants: { tenant_id: string; monthly_rent: string; deposit: string }[];
   start_date: string;
   end_date: string;
   monthly_rent: string;
@@ -52,7 +52,7 @@ const emptyUnit: UnitForm = { property_id: "", name: "", description: "" };
 const emptyLease: LeaseForm = {
   property_id: "",
   unit_id: "",
-  tenant_ids: [],
+  tenants: [],
   start_date: "",
   end_date: "",
   monthly_rent: "",
@@ -105,12 +105,12 @@ function App() {
         .filter((lease) => lease.id !== editingLeaseId)
         .flatMap((lease) => lease.tenant_ids),
     );
-    const selectedTenantIds = new Set(leaseForm.tenant_ids.map(Number));
+    const selectedTenantIds = new Set(leaseForm.tenants.map((tenant) => Number(tenant.tenant_id)));
     return tenants.filter((tenant) => !assignedTenantIds.has(tenant.id) || selectedTenantIds.has(tenant.id));
-  }, [editingLeaseId, leaseForm.tenant_ids, leases, tenants]);
+  }, [editingLeaseId, leaseForm.tenants, leases, tenants]);
   const selectedLeaseTenants = useMemo(
-    () => tenants.filter((tenant) => leaseForm.tenant_ids.includes(String(tenant.id))),
-    [leaseForm.tenant_ids, tenants],
+    () => tenants.filter((tenant) => leaseForm.tenants.some((term) => term.tenant_id === String(tenant.id))),
+    [leaseForm.tenants, tenants],
   );
   const visibleBills = useMemo(
     () => bills.filter((bill) => showHistoricPaidBills || bill.status !== "paid"),
@@ -252,9 +252,14 @@ function App() {
 
   async function submitLease(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const tenantIds = leaseForm.tenant_ids.map(Number).filter(Boolean);
-    if (tenantIds.length === 0) {
+    if (leaseForm.tenants.length === 0) {
       setError("Please choose at least one tenant for the lease.");
+      setMessage("");
+      return;
+    }
+    const rentTotal = leaseForm.tenants.reduce((total, tenant) => total + Number(tenant.monthly_rent || 0), 0);
+    if (Math.round(rentTotal * 100) !== Math.round(Number(leaseForm.monthly_rent || 0) * 100)) {
+      setError("Tenant monthly rents must add up to the lease monthly rent.");
       setMessage("");
       return;
     }
@@ -262,7 +267,11 @@ function App() {
       const payload = {
         property_id: Number(leaseForm.property_id),
         unit_id: leaseForm.unit_id ? Number(leaseForm.unit_id) : null,
-        tenant_ids: tenantIds,
+        tenants: leaseForm.tenants.map((tenant) => ({
+          tenant_id: Number(tenant.tenant_id),
+          monthly_rent: tenant.monthly_rent,
+          deposit: tenant.deposit || "0",
+        })),
         start_date: leaseForm.start_date,
         end_date: leaseForm.end_date,
         monthly_rent: leaseForm.monthly_rent,
@@ -284,9 +293,18 @@ function App() {
     const value = String(tenantId);
     setLeaseForm((current) => ({
       ...current,
-      tenant_ids: current.tenant_ids.includes(value)
-        ? current.tenant_ids.filter((id) => id !== value)
-        : [...current.tenant_ids, value],
+      tenants: current.tenants.some((tenant) => tenant.tenant_id === value)
+        ? current.tenants.filter((tenant) => tenant.tenant_id !== value)
+        : [...current.tenants, { tenant_id: value, monthly_rent: "", deposit: "0" }],
+    }));
+  }
+
+  function updateLeaseTenantTerm(tenantId: number, field: "monthly_rent" | "deposit", value: string) {
+    setLeaseForm((current) => ({
+      ...current,
+      tenants: current.tenants.map((tenant) =>
+        tenant.tenant_id === String(tenantId) ? { ...tenant, [field]: value } : tenant,
+      ),
     }));
   }
 
@@ -684,7 +702,7 @@ function App() {
                               <label key={tenant.id} className="dropdown-option">
                                 <input
                                   type="checkbox"
-                                  checked={leaseForm.tenant_ids.includes(value)}
+                                  checked={leaseForm.tenants.some((term) => term.tenant_id === value)}
                                   onChange={() => toggleLeaseTenant(tenant.id)}
                                 />
                                 <span>
@@ -708,9 +726,40 @@ function App() {
                     )}
                   </div>
                   <span className="help-text">
-                    Tenants already used by another lease are hidden. Click a selected chip to remove it.
+                    Tenants already used by another lease are hidden. Click a selected chip to remove it, then enter rent and deposit.
                   </span>
                 </label>
+                {selectedLeaseTenants.length > 0 && (
+                  <div className="tenant-terms">
+                    <h3>Tenant rent and deposit</h3>
+                    {selectedLeaseTenants.map((tenant) => {
+                      const terms = leaseForm.tenants.find((term) => term.tenant_id === String(tenant.id));
+                      return (
+                        <div className="tenant-term-row" key={tenant.id}>
+                          <span>{tenant.full_name}</span>
+                          <input
+                            required
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            placeholder="Monthly rent"
+                            value={terms?.monthly_rent ?? ""}
+                            onChange={(event) => updateLeaseTenantTerm(tenant.id, "monthly_rent", event.target.value)}
+                          />
+                          <input
+                            required
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Deposit"
+                            value={terms?.deposit ?? ""}
+                            onChange={(event) => updateLeaseTenantTerm(tenant.id, "deposit", event.target.value)}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="two-columns">
                   <label>
                     Start date
@@ -758,7 +807,14 @@ function App() {
                       <td>#{lease.id}</td>
                       <td>{propertyNameById.get(lease.property_id) ?? `Property #${lease.property_id}`}</td>
                       <td>{lease.unit_id ? (unitNameById.get(lease.unit_id) ?? `Unit #${lease.unit_id}`) : "Whole property"}</td>
-                      <td>{lease.tenant_ids.map((id) => tenantNameById.get(id) ?? `#${id}`).join(", ")}</td>
+                      <td>
+                        {lease.tenants
+                          .map((tenant) => {
+                            const name = tenantNameById.get(tenant.tenant_id) ?? `#${tenant.tenant_id}`;
+                            return `${name}: rent $${tenant.monthly_rent}, deposit $${tenant.deposit}`;
+                          })
+                          .join("; ")}
+                      </td>
                       <td>
                         {lease.start_date} to {lease.end_date}
                       </td>
@@ -770,7 +826,11 @@ function App() {
                             setLeaseForm({
                               property_id: String(lease.property_id),
                               unit_id: lease.unit_id ? String(lease.unit_id) : "",
-                              tenant_ids: lease.tenant_ids.map(String),
+                              tenants: lease.tenants.map((tenant) => ({
+                                tenant_id: String(tenant.tenant_id),
+                                monthly_rent: tenant.monthly_rent,
+                                deposit: tenant.deposit,
+                              })),
                               start_date: lease.start_date,
                               end_date: lease.end_date,
                               monthly_rent: lease.monthly_rent,

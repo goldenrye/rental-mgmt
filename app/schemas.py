@@ -101,19 +101,37 @@ class TenantRead(TenantBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LeaseTenantTerms(BaseModel):
+    tenant_id: int
+    monthly_rent: Decimal = Field(gt=0, decimal_places=2)
+    deposit: Decimal = Field(ge=0, decimal_places=2)
+
+
+class LeaseTenantTermsRead(BaseModel):
+    tenant_id: int
+    monthly_rent: Decimal = Field(ge=0, decimal_places=2)
+    deposit: Decimal = Field(ge=0, decimal_places=2)
+
+
 class LeaseBase(BaseModel):
     property_id: int
     unit_id: Optional[int] = None
     start_date: date
     end_date: date
     monthly_rent: Decimal = Field(gt=0, decimal_places=2)
-    tenant_ids: list[int] = Field(min_length=1)
+    tenants: list[LeaseTenantTerms] = Field(min_length=1)
     notes: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_dates(self) -> "LeaseBase":
         if self.end_date < self.start_date:
             raise ValueError("end_date must be on or after start_date")
+        tenant_ids = [tenant.tenant_id for tenant in self.tenants]
+        if len(tenant_ids) != len(set(tenant_ids)):
+            raise ValueError("tenant ids must be unique")
+        rent_total = sum((tenant.monthly_rent for tenant in self.tenants), Decimal("0.00"))
+        if rent_total != self.monthly_rent:
+            raise ValueError("tenant monthly rents must add up to lease monthly_rent")
         return self
 
 
@@ -127,13 +145,21 @@ class LeaseUpdate(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     monthly_rent: Optional[Decimal] = Field(default=None, gt=0, decimal_places=2)
-    tenant_ids: Optional[list[int]] = Field(default=None, min_length=1)
+    tenants: Optional[list[LeaseTenantTerms]] = Field(default=None, min_length=1)
     notes: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_dates(self) -> "LeaseUpdate":
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date must be on or after start_date")
+        if self.tenants is not None:
+            tenant_ids = [tenant.tenant_id for tenant in self.tenants]
+            if len(tenant_ids) != len(set(tenant_ids)):
+                raise ValueError("tenant ids must be unique")
+            if self.monthly_rent is not None:
+                rent_total = sum((tenant.monthly_rent for tenant in self.tenants), Decimal("0.00"))
+                if rent_total != self.monthly_rent:
+                    raise ValueError("tenant monthly rents must add up to lease monthly_rent")
         return self
 
 
@@ -146,6 +172,7 @@ class LeaseRead(BaseModel):
     end_date: date
     monthly_rent: Decimal
     tenant_ids: list[int]
+    tenants: list[LeaseTenantTermsRead]
     notes: Optional[str]
 
     model_config = ConfigDict(from_attributes=True)

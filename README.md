@@ -15,7 +15,7 @@ Cloud-ready rental management application with a FastAPI backend and React front
 - Bill balance and status are recalculated after every payment
 - Browser-based landlord dashboard for properties, tenants, leases, bills, and payments
 
-For leases with multiple tenants, the monthly rent is split equally across bound tenants.
+For leases with multiple tenants, the landlord assigns each tenant's monthly rent share and deposit. Tenant rent shares must add up to the lease monthly rent.
 
 Bill generation is current-month only. When a lease starts or ends mid-month, the bill is prorated by active lease days in that month. The backend also runs an in-process scheduler that automatically generates the current month bill on the 1st day of each month.
 
@@ -120,7 +120,7 @@ curl -X POST http://localhost:8000/tenants \
 curl -X POST http://localhost:8000/leases \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"property_id":1,"tenant_ids":[1],"start_date":"2026-10-01","end_date":"2027-09-30","monthly_rent":"1500.00","notes":"Annual lease"}'
+  -d '{"property_id":1,"tenants":[{"tenant_id":1,"monthly_rent":"1500.00","deposit":"1500.00"}],"start_date":"2026-10-01","end_date":"2027-09-30","monthly_rent":"1500.00","notes":"Annual lease"}'
 ```
 
 6. Generate current bills:
