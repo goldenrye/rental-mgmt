@@ -58,7 +58,7 @@ type LeaseForm = {
 
 type ManualBillForm = {
   property_id: string;
-  bill_type: "electricity" | "water" | "mortgage" | "other";
+  bill_type: "electricity" | "water" | "mortgage" | "insurance" | "property_tax" | "maintenance" | "other";
   title: string;
   amount_due: string;
   recurrence: "one_time" | "monthly" | "annually" | "custom_period";
@@ -92,6 +92,21 @@ const emptyManualBill: ManualBillForm = {
   notes: "",
 };
 
+function formatDateInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function currentMonthRange() {
+  const today = new Date();
+  return {
+    start: formatDateInput(new Date(today.getFullYear(), today.getMonth(), 1)),
+    end: formatDateInput(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
+  };
+}
+
 function splitMonthlyRent(monthlyRent: string, tenantCount: number): string[] {
   if (tenantCount <= 0) {
     return [];
@@ -120,6 +135,7 @@ function App() {
   const [propertyBills, setPropertyBills] = useState<PropertyBill[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [showHistoricPaidBills, setShowHistoricPaidBills] = useState(false);
+  const [billFilter, setBillFilter] = useState(currentMonthRange);
   const [propertyForm, setPropertyForm] = useState<PropertyForm>(emptyProperty);
   const [unitForm, setUnitForm] = useState<UnitForm>(emptyUnit);
   const [tenantForm, setTenantForm] = useState<TenantForm>(emptyTenant);
@@ -190,6 +206,13 @@ function App() {
         .filter((payment) => payment.tenant_id === selectedPaymentTenantId)
         .sort((first, second) => new Date(second.paid_at).getTime() - new Date(first.paid_at).getTime()),
     [payments, selectedPaymentTenantId],
+  );
+  const visiblePropertyBills = useMemo(
+    () =>
+      propertyBills.filter(
+        (bill) => (!billFilter.start || bill.due_date >= billFilter.start) && (!billFilter.end || bill.due_date <= billFilter.end),
+      ),
+    [billFilter.end, billFilter.start, propertyBills],
   );
   useEffect(() => {
     if (!getStoredToken()) {
@@ -600,7 +623,7 @@ function App() {
       ) : (
         <>
           <nav className="tabs">
-            {(["properties", "units", "tenants", "leases", "bill", "bills"] as Tab[]).map((tab) => (
+            {(["properties", "units", "tenants", "leases", "bills", "bill"] as Tab[]).map((tab) => (
               <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>
                 {tabLabels[tab]}
               </button>
@@ -1122,15 +1145,38 @@ function App() {
                     <h2>Property Bills</h2>
                     <p className="muted">Track landlord property expenses and generate tenant-payable bills when needed.</p>
                   </div>
-                  <button className="primary" onClick={openBillModal}>
-                    Create Property Bill
+                  <div className="header-actions">
+                    <button className="primary" onClick={openBillModal}>
+                      Create Property Bill
+                    </button>
+                  </div>
+                </div>
+                <div className="filter-bar">
+                  <label>
+                    From
+                    <input
+                      type="date"
+                      value={billFilter.start}
+                      onChange={(event) => setBillFilter((current) => ({ ...current, start: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    To
+                    <input
+                      type="date"
+                      value={billFilter.end}
+                      onChange={(event) => setBillFilter((current) => ({ ...current, end: event.target.value }))}
+                    />
+                  </label>
+                  <button className="secondary" onClick={() => setBillFilter(currentMonthRange())}>
+                    Current Month
                   </button>
                 </div>
-                {propertyBills.length === 0 ? (
-                  <p className="muted">No property bills yet.</p>
+                {visiblePropertyBills.length === 0 ? (
+                  <p className="muted">No property bills in the selected period.</p>
                 ) : (
                   <div className="bill-card-list">
-                    {propertyBills.map((bill) => (
+                    {visiblePropertyBills.map((bill) => (
                       <article className="bill-card" key={bill.id}>
                         <div className="card-header">
                           <div>
@@ -1223,6 +1269,9 @@ function App() {
                         <option value="electricity">Electricity</option>
                         <option value="water">Water</option>
                         <option value="mortgage">Mortgage</option>
+                        <option value="insurance">Insurance</option>
+                        <option value="property_tax">Property Tax</option>
+                        <option value="maintenance">Maintenance</option>
                         <option value="other">Other</option>
                       </select>
                     </label>

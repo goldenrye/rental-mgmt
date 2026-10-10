@@ -75,7 +75,7 @@ export type PropertyBill = {
   id: number;
   landlord_id: number;
   property_id: number;
-  bill_type: "electricity" | "water" | "mortgage" | "other";
+  bill_type: "electricity" | "water" | "mortgage" | "insurance" | "property_tax" | "maintenance" | "other";
   title: string;
   amount_due: string;
   recurrence: "one_time" | "monthly" | "annually" | "custom_period";
@@ -193,7 +193,7 @@ export const api = {
   listPropertyBills: () => request<PropertyBill[]>("/property-bills"),
   createPropertyBills: (payload: {
     property_id: number;
-    bill_type: "electricity" | "water" | "mortgage" | "other";
+    bill_type: "electricity" | "water" | "mortgage" | "insurance" | "property_tax" | "maintenance" | "other";
     title: string;
     amount_due: string;
     recurrence: "one_time" | "monthly" | "annually" | "custom_period";

@@ -222,7 +222,7 @@ class ManualBillCreate(BaseModel):
 
 class PropertyBillBase(BaseModel):
     property_id: int
-    bill_type: Literal["electricity", "water", "mortgage", "other"]
+    bill_type: Literal["electricity", "water", "mortgage", "insurance", "property_tax", "maintenance", "other"]
     title: str = Field(min_length=1, max_length=255)
     amount_due: Decimal = Field(gt=0, decimal_places=2)
     recurrence: Literal["one_time", "monthly", "annually", "custom_period"]
@@ -246,7 +246,7 @@ class PropertyBillCreate(PropertyBillBase):
 
 
 class PropertyBillUpdate(BaseModel):
-    bill_type: Optional[Literal["electricity", "water", "mortgage", "other"]] = None
+    bill_type: Optional[Literal["electricity", "water", "mortgage", "insurance", "property_tax", "maintenance", "other"]] = None
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     amount_due: Optional[Decimal] = Field(default=None, gt=0, decimal_places=2)
     due_date: Optional[date] = None

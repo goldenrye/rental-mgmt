@@ -147,6 +147,27 @@ td:first-child {
   justify-content: flex-end;
 }
 
+.filter-bar {
+  align-items: end;
+  background: #f8fbff;
+  border: 1px solid #dbe3f0;
+  border-radius: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px;
+}
+
+.filter-bar label {
+  color: #344059;
+  display: grid;
+  font-size: 0.85rem;
+  font-weight: 700;
+  gap: 6px;
+  min-width: 180px;
+}
+
 .inline-checkbox {
   align-items: center;
   color: #334155;
