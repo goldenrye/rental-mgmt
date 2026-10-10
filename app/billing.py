@@ -88,6 +88,7 @@ def generate_bills_for_lease(db: Session, lease: Lease, billing_date: Optional[d
                 RentalBill.tenant_id == tenant_id,
                 RentalBill.bill_year == billing_date.year,
                 RentalBill.bill_month == billing_date.month,
+                RentalBill.bill_type == "rent",
             )
         )
         if existing:
@@ -98,6 +99,11 @@ def generate_bills_for_lease(db: Session, lease: Lease, billing_date: Optional[d
             landlord_id=lease.landlord_id,
             lease_id=lease.id,
             tenant_id=tenant_id,
+            title="Monthly rent",
+            bill_type="rent",
+            recurrence="monthly",
+            period_start=active_start,
+            period_end=active_end,
             bill_year=billing_date.year,
             bill_month=billing_date.month,
             due_date=active_start,

@@ -4,6 +4,7 @@ import {
   Bill,
   Lease,
   Payment,
+  PropertyBill,
   RentalProperty,
   RentalUnit,
   Tenant,
@@ -16,12 +17,13 @@ import {
 } from "./api";
 import "./styles.css";
 
-type Tab = "properties" | "units" | "tenants" | "leases" | "bills";
+type Tab = "properties" | "units" | "tenants" | "leases" | "bill" | "bills";
 const tabLabels: Record<Tab, string> = {
   properties: "properties",
   units: "units",
   tenants: "tenants",
   leases: "leases",
+  bill: "bill",
   bills: "rental",
 };
 
@@ -54,6 +56,18 @@ type LeaseForm = {
   notes: string;
 };
 
+type ManualBillForm = {
+  property_id: string;
+  bill_type: "electricity" | "water" | "mortgage" | "other";
+  title: string;
+  amount_due: string;
+  recurrence: "one_time" | "monthly" | "annually" | "custom_period";
+  due_date: string;
+  period_start: string;
+  period_end: string;
+  notes: string;
+};
+
 const emptyProperty: PropertyForm = { name: "", address: "", description: "" };
 const emptyTenant: TenantForm = { full_name: "", email: "", phone: "", notes: "" };
 const emptyUnit: UnitForm = { property_id: "", name: "", description: "" };
@@ -64,6 +78,17 @@ const emptyLease: LeaseForm = {
   start_date: "",
   end_date: "",
   monthly_rent: "",
+  notes: "",
+};
+const emptyManualBill: ManualBillForm = {
+  property_id: "",
+  bill_type: "electricity",
+  title: "",
+  amount_due: "",
+  recurrence: "one_time",
+  due_date: "",
+  period_start: "",
+  period_end: "",
   notes: "",
 };
 
@@ -92,17 +117,20 @@ function App() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [leases, setLeases] = useState<Lease[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [propertyBills, setPropertyBills] = useState<PropertyBill[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [showHistoricPaidBills, setShowHistoricPaidBills] = useState(false);
   const [propertyForm, setPropertyForm] = useState<PropertyForm>(emptyProperty);
   const [unitForm, setUnitForm] = useState<UnitForm>(emptyUnit);
   const [tenantForm, setTenantForm] = useState<TenantForm>(emptyTenant);
   const [leaseForm, setLeaseForm] = useState<LeaseForm>(emptyLease);
+  const [manualBillForm, setManualBillForm] = useState<ManualBillForm>(emptyManualBill);
   const [editingPropertyId, setEditingPropertyId] = useState<number | null>(null);
   const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
   const [editingTenantId, setEditingTenantId] = useState<number | null>(null);
   const [editingLeaseId, setEditingLeaseId] = useState<number | null>(null);
   const [leaseModalOpen, setLeaseModalOpen] = useState(false);
+  const [billModalOpen, setBillModalOpen] = useState(false);
   const [expandedLeaseId, setExpandedLeaseId] = useState<number | null>(null);
   const [selectedPaymentTenantId, setSelectedPaymentTenantId] = useState<number | null>(null);
   const [tenantDropdownOpen, setTenantDropdownOpen] = useState(false);
@@ -163,7 +191,6 @@ function App() {
         .sort((first, second) => new Date(second.paid_at).getTime() - new Date(first.paid_at).getTime()),
     [payments, selectedPaymentTenantId],
   );
-
   useEffect(() => {
     if (!getStoredToken()) {
       return;
@@ -234,13 +261,24 @@ function App() {
     setTenantDropdownOpen(false);
   }
 
+  function openBillModal() {
+    setManualBillForm(emptyManualBill);
+    setBillModalOpen(true);
+  }
+
+  function closeBillModal() {
+    setBillModalOpen(false);
+    setManualBillForm(emptyManualBill);
+  }
+
   async function loadLandlordData() {
-    const [nextProperties, nextUnits, nextTenants, nextLeases, nextBills, nextPayments] = await Promise.all([
+    const [nextProperties, nextUnits, nextTenants, nextLeases, nextBills, nextPropertyBills, nextPayments] = await Promise.all([
       api.listProperties(),
       api.listUnits(),
       api.listTenants(),
       api.listLeases(),
       api.listBills(),
+      api.listPropertyBills(),
       api.listPayments(),
     ]);
     setProperties(nextProperties);
@@ -248,6 +286,7 @@ function App() {
     setTenants(nextTenants);
     setLeases(nextLeases);
     setBills(nextBills);
+    setPropertyBills(nextPropertyBills);
     setPayments(nextPayments);
   }
 
@@ -275,10 +314,13 @@ function App() {
     setTenants([]);
     setLeases([]);
     setBills([]);
+    setPropertyBills([]);
     setPayments([]);
+    setManualBillForm(emptyManualBill);
     setSelectedPaymentTenantId(null);
     setExpandedLeaseId(null);
     setLeaseModalOpen(false);
+    setBillModalOpen(false);
     setTenantDropdownOpen(false);
     setMessage("Signed out.");
   }
@@ -395,6 +437,56 @@ function App() {
     }));
   }
 
+  async function submitManualBill(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await withStatus(async () => {
+      const recurring = manualBillForm.recurrence !== "one_time";
+      const createdBills = await api.createPropertyBills({
+        property_id: Number(manualBillForm.property_id),
+        bill_type: manualBillForm.bill_type,
+        title: manualBillForm.title,
+        amount_due: manualBillForm.amount_due,
+        recurrence: manualBillForm.recurrence,
+        due_date: manualBillForm.due_date,
+        period_start: recurring ? manualBillForm.period_start : undefined,
+        period_end: recurring ? manualBillForm.period_end : undefined,
+        notes: manualBillForm.notes || undefined,
+      });
+      setManualBillForm(emptyManualBill);
+      setBillModalOpen(false);
+      setPropertyBills(await api.listPropertyBills());
+      setMessage(`${createdBills.length} property bill${createdBills.length === 1 ? "" : "s"} created.`);
+    });
+  }
+
+  async function updatePropertyBillStatus(bill: PropertyBill, status: "unpaid" | "paid") {
+    await withStatus(async () => {
+      const updatedBill = await api.updatePropertyBill(bill.id, { status });
+      setPropertyBills((current) => current.map((item) => (item.id === bill.id ? updatedBill : item)));
+    }, status === "paid" ? "Bill marked as paid." : "Bill marked as unpaid.");
+  }
+
+  async function editPropertyBillAmount(bill: PropertyBill) {
+    const amountDue = window.prompt(`Update amount for "${bill.title}"`, bill.amount_due);
+    if (amountDue === null) {
+      return;
+    }
+    await withStatus(async () => {
+      const updatedBill = await api.updatePropertyBill(bill.id, { amount_due: amountDue });
+      setPropertyBills((current) => current.map((item) => (item.id === bill.id ? updatedBill : item)));
+    }, "Bill amount updated.");
+  }
+
+  async function generateTenantBills(propertyBillId: number) {
+    await withStatus(async () => {
+      const generatedBills = await api.generateTenantBillsFromPropertyBill(propertyBillId);
+      const [nextPropertyBills, nextBills] = await Promise.all([api.listPropertyBills(), api.listBills()]);
+      setPropertyBills(nextPropertyBills);
+      setBills(nextBills);
+      setMessage(`${generatedBills.length} tenant bill${generatedBills.length === 1 ? "" : "s"} generated.`);
+    });
+  }
+
   async function generateBills() {
     await withStatus(async () => {
       await api.generateCurrentBills();
@@ -508,7 +600,7 @@ function App() {
       ) : (
         <>
           <nav className="tabs">
-            {(["properties", "units", "tenants", "leases", "bills"] as Tab[]).map((tab) => (
+            {(["properties", "units", "tenants", "leases", "bill", "bills"] as Tab[]).map((tab) => (
               <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>
                 {tabLabels[tab]}
               </button>
@@ -1022,6 +1114,207 @@ function App() {
             </>
           )}
 
+          {activeTab === "bill" && (
+            <>
+              <section className="card">
+                <div className="card-header">
+                  <div>
+                    <h2>Property Bills</h2>
+                    <p className="muted">Track landlord property expenses and generate tenant-payable bills when needed.</p>
+                  </div>
+                  <button className="primary" onClick={openBillModal}>
+                    Create Property Bill
+                  </button>
+                </div>
+                {propertyBills.length === 0 ? (
+                  <p className="muted">No property bills yet.</p>
+                ) : (
+                  <div className="bill-card-list">
+                    {propertyBills.map((bill) => (
+                      <article className="bill-card" key={bill.id}>
+                        <div className="card-header">
+                          <div>
+                            <p className="eyebrow">{bill.bill_type}</p>
+                            <h3>{bill.title}</h3>
+                            <p className="muted">{propertyNameById.get(bill.property_id) ?? `Property #${bill.property_id}`}</p>
+                          </div>
+                          <span className={`status ${bill.status === "paid" ? "paid" : "open"}`}>{bill.status}</span>
+                        </div>
+                        <div className="lease-details">
+                          <div className="detail-item">
+                            <span>Amount</span>
+                            <strong>${bill.amount_due}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Due Date</span>
+                            <strong>{bill.due_date}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Repeat</span>
+                            <strong>{bill.recurrence.replace("_", " ")}</strong>
+                          </div>
+                          <div className="detail-item">
+                            <span>Tenant Bill</span>
+                            <strong>{bill.generated_at ? "Generated" : "Not generated"}</strong>
+                          </div>
+                        </div>
+                        {bill.notes && <p className="muted">{bill.notes}</p>}
+                        <div className="actions">
+                          <button onClick={() => editPropertyBillAmount(bill)}>Edit Amount</button>
+                          <button onClick={() => updatePropertyBillStatus(bill, bill.status === "paid" ? "unpaid" : "paid")}>
+                            Mark {bill.status === "paid" ? "Unpaid" : "Paid"}
+                          </button>
+                          <button onClick={() => generateTenantBills(bill.id)}>Generate Tenant Bill</button>
+                          <button
+                            onClick={() =>
+                              confirmDelete(`property bill "${bill.title}"`) &&
+                              withStatus(() => api.deletePropertyBill(bill.id).then(loadLandlordData), "Property bill deleted.")
+                            }
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {billModalOpen && (
+                <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bill-modal-title">
+                  <form onSubmit={submitManualBill} className="card form modal-card">
+                    <div className="card-header">
+                      <h2 id="bill-modal-title">Create Property Bill</h2>
+                      <button type="button" className="secondary" onClick={closeBillModal}>
+                        Close
+                      </button>
+                    </div>
+                    <label>
+                      Property
+                      <select
+                        required
+                        value={manualBillForm.property_id}
+                        onChange={(event) =>
+                          setManualBillForm({
+                            ...manualBillForm,
+                            property_id: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">Select property</option>
+                        {properties.map((property) => (
+                          <option key={property.id} value={property.id}>
+                            {property.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Bill category
+                      <select
+                        value={manualBillForm.bill_type}
+                        onChange={(event) =>
+                          setManualBillForm({
+                            ...manualBillForm,
+                            bill_type: event.target.value as ManualBillForm["bill_type"],
+                          })
+                        }
+                      >
+                        <option value="electricity">Electricity</option>
+                        <option value="water">Water</option>
+                        <option value="mortgage">Mortgage</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+                    <label>
+                      Bill title
+                      <input
+                        required
+                        placeholder="Example: Utility charge"
+                        value={manualBillForm.title}
+                        onChange={(event) => setManualBillForm({ ...manualBillForm, title: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Amount due
+                      <input
+                        required
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={manualBillForm.amount_due}
+                        onChange={(event) => setManualBillForm({ ...manualBillForm, amount_due: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Repeat
+                      <select
+                        value={manualBillForm.recurrence}
+                        onChange={(event) =>
+                          setManualBillForm({
+                            ...manualBillForm,
+                            recurrence: event.target.value as ManualBillForm["recurrence"],
+                          })
+                        }
+                      >
+                        <option value="one_time">One-time bill</option>
+                        <option value="monthly">Repeated monthly bill</option>
+                        <option value="annually">Repeated annual bill</option>
+                        <option value="custom_period">Bill for a specified period</option>
+                      </select>
+                    </label>
+                    <label>
+                      Due date
+                      <input
+                        required
+                        type="date"
+                        value={manualBillForm.due_date}
+                        onChange={(event) => setManualBillForm({ ...manualBillForm, due_date: event.target.value })}
+                      />
+                    </label>
+                    {manualBillForm.recurrence !== "one_time" && (
+                      <div className="two-columns">
+                        <label>
+                          Period start
+                          <input
+                            required
+                            type="date"
+                            value={manualBillForm.period_start}
+                            onChange={(event) => setManualBillForm({ ...manualBillForm, period_start: event.target.value })}
+                          />
+                        </label>
+                        <label>
+                          Period end
+                          <input
+                            required
+                            type="date"
+                            value={manualBillForm.period_end}
+                            onChange={(event) => setManualBillForm({ ...manualBillForm, period_end: event.target.value })}
+                          />
+                        </label>
+                      </div>
+                    )}
+                    <label>
+                      Notes
+                      <textarea
+                        value={manualBillForm.notes}
+                        onChange={(event) => setManualBillForm({ ...manualBillForm, notes: event.target.value })}
+                      />
+                    </label>
+                    <div className="modal-actions">
+                      <button disabled={loading} className="primary">
+                        Create Property Bill
+                      </button>
+                      <button type="button" className="secondary" onClick={closeBillModal}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </>
+          )}
+
           {activeTab === "bills" && (
             <section className="card">
               <div className="card-header">
@@ -1080,6 +1373,10 @@ function App() {
                   return (
                     <tr key={bill.id}>
                       <td>#{bill.id}</td>
+                      <td>
+                        <strong>{bill.title}</strong>
+                        <div className="help-text">{bill.bill_type === "manual" ? "Manual bill" : "Monthly rent"}</div>
+                      </td>
                       <td>
                         <button className="link-button" onClick={() => setSelectedPaymentTenantId(bill.tenant_id)}>
                           {tenantNameById.get(bill.tenant_id) ?? `Tenant #${bill.tenant_id}`}

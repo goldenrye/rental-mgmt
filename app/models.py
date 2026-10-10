@@ -22,6 +22,11 @@ class BillStatus(str, Enum):
     paid = "paid"
 
 
+class PropertyBillStatus(str, Enum):
+    unpaid = "unpaid"
+    paid = "paid"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -79,6 +84,7 @@ class RentalProperty(Base):
     landlord: Mapped["LandlordProfile"] = relationship(back_populates="properties")
     units: Mapped[List["RentalUnit"]] = relationship(back_populates="property", cascade="all, delete-orphan")
     leases: Mapped[List["Lease"]] = relationship(back_populates="property")
+    property_bills: Mapped[List["PropertyBill"]] = relationship(back_populates="property", cascade="all, delete-orphan")
 
 
 class RentalUnit(Base):
@@ -128,14 +134,41 @@ class LeaseTenant(Base):
     tenant: Mapped["TenantProfile"] = relationship(back_populates="leases")
 
 
+class PropertyBill(Base):
+    __tablename__ = "property_bills"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), index=True, nullable=False)
+    property_id: Mapped[int] = mapped_column(ForeignKey("rental_properties.id"), index=True, nullable=False)
+    bill_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    recurrence: Mapped[str] = mapped_column(String(32), nullable=False, default="one_time")
+    period_start: Mapped[Optional[date]] = mapped_column(Date)
+    period_end: Mapped[Optional[date]] = mapped_column(Date)
+    due_date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount_due: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    status: Mapped[PropertyBillStatus] = mapped_column(String(32), nullable=False, default=PropertyBillStatus.unpaid.value)
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    property: Mapped["RentalProperty"] = relationship(back_populates="property_bills")
+
+
 class RentalBill(Base):
     __tablename__ = "rental_bills"
-    __table_args__ = (UniqueConstraint("lease_id", "tenant_id", "bill_year", "bill_month", name="uq_bill_month"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), index=True, nullable=False)
     lease_id: Mapped[int] = mapped_column(ForeignKey("leases.id"), index=True, nullable=False)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenant_profiles.id"), index=True, nullable=False)
+    source_property_bill_id: Mapped[Optional[int]] = mapped_column(ForeignKey("property_bills.id"), index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="Monthly rent")
+    bill_type: Mapped[str] = mapped_column(String(32), nullable=False, default="rent")
+    recurrence: Mapped[Optional[str]] = mapped_column(String(32))
+    period_start: Mapped[Optional[date]] = mapped_column(Date)
+    period_end: Mapped[Optional[date]] = mapped_column(Date)
     bill_year: Mapped[int] = mapped_column(nullable=False)
     bill_month: Mapped[int] = mapped_column(nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)

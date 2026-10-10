@@ -1,15 +1,16 @@
 import asyncio
 from contextlib import suppress
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
-from app.billing import apply_payment, generate_bills_for_lease, month_window
+from app.billing import apply_payment, generate_bills_for_lease, money, month_window, monthly_due_date
 from app.config import get_settings
 from app.database import Base, SessionLocal, database_url, engine
 from app.deps import CurrentUser, DbSession, Landlord
@@ -18,6 +19,7 @@ from app.models import (
     Lease,
     LeaseTenant,
     Payment,
+    PropertyBill,
     RentalBill,
     RentalProperty,
     RentalUnit,
@@ -31,9 +33,13 @@ from app.schemas import (
     LeaseRead,
     LeaseUpdate,
     LoginRequest,
+    ManualBillCreate,
     PaymentCreate,
     PaymentRead,
     PaymentResult,
+    PropertyBillCreate,
+    PropertyBillRead,
+    PropertyBillUpdate,
     PropertyCreate,
     PropertyRead,
     PropertyUpdate,
@@ -60,6 +66,19 @@ with engine.begin() as connection:
         connection.execute(text("ALTER TABLE lease_tenants ADD COLUMN monthly_rent NUMERIC(12, 2) NOT NULL DEFAULT 0"))
     if "deposit" not in lease_tenant_columns:
         connection.execute(text("ALTER TABLE lease_tenants ADD COLUMN deposit NUMERIC(12, 2) NOT NULL DEFAULT 0"))
+    rental_bill_columns = {column["name"] for column in inspect(connection).get_columns("rental_bills")}
+    if "title" not in rental_bill_columns:
+        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN title VARCHAR(255) NOT NULL DEFAULT 'Monthly rent'"))
+    if "bill_type" not in rental_bill_columns:
+        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN bill_type VARCHAR(32) NOT NULL DEFAULT 'rent'"))
+    if "recurrence" not in rental_bill_columns:
+        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN recurrence VARCHAR(32)"))
+    if "period_start" not in rental_bill_columns:
+        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN period_start DATE"))
+    if "period_end" not in rental_bill_columns:
+        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN period_end DATE"))
+    if "source_property_bill_id" not in rental_bill_columns:
+        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN source_property_bill_id INTEGER"))
     connection.execute(
         text(
             """
@@ -127,6 +146,46 @@ def generate_monthly_bills(db: DbSession, billing_date: Optional[date] = None, l
     for lease in load_billable_leases(db, target_date, landlord_id):
         bills.extend(generate_bills_for_lease(db, lease, target_date))
     return bills
+
+
+def iter_annual_dates(start: date, end: date) -> list[date]:
+    cursor = start
+    dates: list[date] = []
+    while cursor <= end:
+        dates.append(cursor)
+        next_year = cursor.year + 1
+        try:
+            cursor = cursor.replace(year=next_year)
+        except ValueError:
+            cursor = cursor.replace(year=next_year, day=28)
+    return dates
+
+
+def manual_bill_due_dates(payload: ManualBillCreate) -> list[date]:
+    if payload.recurrence in {"one_time", "custom_period"}:
+        return [payload.due_date]
+    if payload.period_start is None or payload.period_end is None:
+        return [payload.due_date]
+    if payload.recurrence == "monthly":
+        cursor = date(payload.period_start.year, payload.period_start.month, 1)
+        end = date(payload.period_end.year, payload.period_end.month, 1)
+        dates: list[date] = []
+        while cursor <= end:
+            dates.append(monthly_due_date(cursor.year, cursor.month, payload.due_date.day))
+            cursor = date(cursor.year + 1, 1, 1) if cursor.month == 12 else date(cursor.year, cursor.month + 1, 1)
+        return dates
+    if payload.recurrence == "annually":
+        return iter_annual_dates(payload.due_date, payload.period_end)
+    return [payload.due_date]
+
+
+def split_amount(amount: Decimal, count: int) -> list[Decimal]:
+    if count <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one tenant is required")
+    total_cents = int(money(amount) * 100)
+    base_share = total_cents // count
+    remainder = total_cents % count
+    return [Decimal(base_share + (1 if index < remainder else 0)) / Decimal("100") for index in range(count)]
 
 
 async def monthly_bill_scheduler() -> None:
@@ -241,6 +300,18 @@ def get_bill_or_404(db: DbSession, landlord: LandlordProfile, bill_id: int) -> R
     )
     if bill is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
+    return bill
+
+
+def get_property_bill_or_404(db: DbSession, landlord: LandlordProfile, bill_id: int) -> PropertyBill:
+    bill = db.scalar(
+        select(PropertyBill).where(
+            PropertyBill.id == bill_id,
+            PropertyBill.landlord_id == landlord.id,
+        )
+    )
+    if bill is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property bill not found")
     return bill
 
 
@@ -676,6 +747,182 @@ def generate_lease_bills(lease_id: int, db: DbSession, landlord: Landlord) -> li
 def generate_current_month_bills(db: DbSession, landlord: Landlord) -> list[RentalBill]:
     bills = generate_monthly_bills(db, landlord_id=landlord.id)
     db.commit()
+    for bill in bills:
+        db.refresh(bill)
+    return bills
+
+
+@app.get("/property-bills", response_model=list[PropertyBillRead])
+def list_property_bills(db: DbSession, landlord: Landlord) -> list[PropertyBill]:
+    return list(db.scalars(select(PropertyBill).where(PropertyBill.landlord_id == landlord.id)))
+
+
+@app.post("/property-bills", response_model=list[PropertyBillRead], status_code=status.HTTP_201_CREATED)
+def create_property_bills(payload: PropertyBillCreate, db: DbSession, landlord: Landlord) -> list[PropertyBill]:
+    get_property_or_404(db, landlord, payload.property_id)
+    bills: list[PropertyBill] = []
+    for due_date in manual_bill_due_dates(payload):
+        bill = PropertyBill(
+            landlord_id=landlord.id,
+            property_id=payload.property_id,
+            bill_type=payload.bill_type,
+            title=payload.title,
+            recurrence=payload.recurrence,
+            period_start=payload.period_start,
+            period_end=payload.period_end,
+            due_date=due_date,
+            amount_due=money(payload.amount_due),
+            status="unpaid",
+            notes=payload.notes,
+        )
+        db.add(bill)
+        bills.append(bill)
+    db.commit()
+    for bill in bills:
+        db.refresh(bill)
+    return bills
+
+
+@app.patch("/property-bills/{bill_id}", response_model=PropertyBillRead)
+def update_property_bill(
+    bill_id: int, payload: PropertyBillUpdate, db: DbSession, landlord: Landlord
+) -> PropertyBill:
+    bill = get_property_bill_or_404(db, landlord, bill_id)
+    updates = payload.model_dump(exclude_unset=True)
+    if updates.get("status") == "paid" and updates.get("paid_at") is None and bill.paid_at is None:
+        updates["paid_at"] = datetime.now(timezone.utc)
+    if updates.get("status") == "unpaid":
+        updates["paid_at"] = None
+    for field, value in updates.items():
+        setattr(bill, field, value)
+    db.commit()
+    db.refresh(bill)
+    return bill
+
+
+@app.delete("/property-bills/{bill_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_property_bill(bill_id: int, db: DbSession, landlord: Landlord) -> Response:
+    bill = get_property_bill_or_404(db, landlord, bill_id)
+    db.delete(bill)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/property-bills/{bill_id}/generate-tenant-bills", response_model=list[BillRead], status_code=status.HTTP_201_CREATED)
+def generate_tenant_bills_from_property_bill(bill_id: int, db: DbSession, landlord: Landlord) -> list[RentalBill]:
+    property_bill = get_property_bill_or_404(db, landlord, bill_id)
+    period_start = property_bill.period_start or property_bill.due_date
+    period_end = property_bill.period_end or property_bill.due_date
+    active_leases = list(
+        db.scalars(
+            select(Lease)
+            .options(selectinload(Lease.tenants))
+            .where(
+                Lease.landlord_id == landlord.id,
+                Lease.property_id == property_bill.property_id,
+                Lease.start_date <= period_end,
+                Lease.end_date >= period_start,
+            )
+        )
+    )
+    lease_tenant_pairs = [
+        (lease, lease_tenant)
+        for lease in active_leases
+        for lease_tenant in lease.tenants
+    ]
+    if not lease_tenant_pairs:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active tenants found for this property bill period")
+
+    shares = split_amount(property_bill.amount_due, len(lease_tenant_pairs))
+    bills: list[RentalBill] = []
+    for index, (lease, lease_tenant) in enumerate(lease_tenant_pairs):
+        existing = db.scalar(
+            select(RentalBill).where(
+                RentalBill.source_property_bill_id == property_bill.id,
+                RentalBill.tenant_id == lease_tenant.tenant_id,
+            )
+        )
+        if existing:
+            bills.append(existing)
+            continue
+        tenant_bill = RentalBill(
+            landlord_id=landlord.id,
+            lease_id=lease.id,
+            tenant_id=lease_tenant.tenant_id,
+            source_property_bill_id=property_bill.id,
+            title=property_bill.title,
+            bill_type=property_bill.bill_type,
+            recurrence=property_bill.recurrence,
+            period_start=property_bill.period_start,
+            period_end=property_bill.period_end,
+            bill_year=property_bill.due_date.year,
+            bill_month=property_bill.due_date.month,
+            due_date=property_bill.due_date,
+            amount_due=shares[index],
+            amount_paid=Decimal("0.00"),
+            balance=shares[index],
+            status="open",
+        )
+        db.add(tenant_bill)
+        bills.append(tenant_bill)
+    property_bill.generated_at = datetime.now(timezone.utc)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A tenant bill already exists for the same lease, tenant, and month.",
+        ) from exc
+    for bill in bills:
+        db.refresh(bill)
+    return bills
+
+
+@app.post("/bills/manual", response_model=list[BillRead], status_code=status.HTTP_201_CREATED)
+def create_manual_bills(payload: ManualBillCreate, db: DbSession, landlord: Landlord) -> list[RentalBill]:
+    lease = get_lease_or_404(db, landlord, payload.lease_id)
+    lease_tenant_ids = {lease_tenant.tenant_id for lease_tenant in lease.tenants}
+    requested_tenant_ids = set(payload.tenant_ids)
+    if not requested_tenant_ids.issubset(lease_tenant_ids):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected tenants must belong to the selected lease")
+
+    amount_due = money(payload.amount_due)
+    due_dates = manual_bill_due_dates(payload)
+    bills: list[RentalBill] = []
+    for due_date in due_dates:
+        for tenant_id in payload.tenant_ids:
+            bill = RentalBill(
+                landlord_id=landlord.id,
+                lease_id=lease.id,
+                tenant_id=tenant_id,
+                title=payload.title,
+                bill_type="manual",
+                recurrence=payload.recurrence,
+                period_start=payload.period_start,
+                period_end=payload.period_end,
+                bill_year=due_date.year,
+                bill_month=due_date.month,
+                due_date=due_date,
+                amount_due=amount_due,
+                amount_paid=Decimal("0.00"),
+                balance=amount_due,
+                status="open",
+            )
+            db.add(bill)
+            bills.append(bill)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "A bill already exists for the same lease, tenant, and month. "
+                "If this happens on an older local database, recreate the database or migrate the old bill uniqueness constraint."
+            ),
+        ) from exc
     for bill in bills:
         db.refresh(bill)
     return bills

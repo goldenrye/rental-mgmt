@@ -56,6 +56,12 @@ export type Bill = {
   landlord_id: number;
   lease_id: number;
   tenant_id: number;
+  source_property_bill_id?: number | null;
+  title: string;
+  bill_type: string;
+  recurrence?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
   bill_year: number;
   bill_month: number;
   due_date: string;
@@ -63,6 +69,23 @@ export type Bill = {
   amount_paid: string;
   balance: string;
   status: string;
+};
+
+export type PropertyBill = {
+  id: number;
+  landlord_id: number;
+  property_id: number;
+  bill_type: "electricity" | "water" | "mortgage" | "other";
+  title: string;
+  amount_due: string;
+  recurrence: "one_time" | "monthly" | "annually" | "custom_period";
+  due_date: string;
+  period_start?: string | null;
+  period_end?: string | null;
+  status: "unpaid" | "paid";
+  paid_at?: string | null;
+  generated_at?: string | null;
+  notes?: string | null;
 };
 
 export type Payment = {
@@ -167,6 +190,23 @@ export const api = {
     request<Lease>(`/leases/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteLease: (id: number) => request<void>(`/leases/${id}`, { method: "DELETE" }),
   generateCurrentBills: () => request<Bill[]>("/bills/generate-current-month", { method: "POST" }),
+  listPropertyBills: () => request<PropertyBill[]>("/property-bills"),
+  createPropertyBills: (payload: {
+    property_id: number;
+    bill_type: "electricity" | "water" | "mortgage" | "other";
+    title: string;
+    amount_due: string;
+    recurrence: "one_time" | "monthly" | "annually" | "custom_period";
+    due_date: string;
+    period_start?: string;
+    period_end?: string;
+    notes?: string;
+  }) => request<PropertyBill[]>("/property-bills", { method: "POST", body: JSON.stringify(payload) }),
+  updatePropertyBill: (id: number, payload: Partial<PropertyBill>) =>
+    request<PropertyBill>(`/property-bills/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deletePropertyBill: (id: number) => request<void>(`/property-bills/${id}`, { method: "DELETE" }),
+  generateTenantBillsFromPropertyBill: (id: number) =>
+    request<Bill[]>(`/property-bills/${id}/generate-tenant-bills`, { method: "POST" }),
   listBills: () => request<Bill[]>("/bills"),
   deleteBill: (id: number) => request<void>(`/bills/${id}`, { method: "DELETE" }),
   listPayments: () => request<Payment[]>("/payments"),

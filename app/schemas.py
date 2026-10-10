@@ -183,6 +183,12 @@ class BillRead(BaseModel):
     landlord_id: int
     lease_id: int
     tenant_id: int
+    source_property_bill_id: Optional[int]
+    title: str
+    bill_type: str
+    recurrence: Optional[str]
+    period_start: Optional[date]
+    period_end: Optional[date]
     bill_year: int
     bill_month: int
     due_date: date
@@ -190,6 +196,88 @@ class BillRead(BaseModel):
     amount_paid: Decimal
     balance: Decimal
     status: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ManualBillCreate(BaseModel):
+    lease_id: int
+    tenant_ids: list[int] = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=255)
+    amount_due: Decimal = Field(gt=0, decimal_places=2)
+    recurrence: Literal["one_time", "monthly", "annually", "custom_period"]
+    due_date: date
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
+
+    @model_validator(mode="after")
+    def validate_period(self) -> "ManualBillCreate":
+        if self.recurrence in {"monthly", "annually", "custom_period"}:
+            if self.period_start is None or self.period_end is None:
+                raise ValueError("period_start and period_end are required for recurring or custom-period bills")
+            if self.period_end < self.period_start:
+                raise ValueError("period_end must be on or after period_start")
+        return self
+
+
+class PropertyBillBase(BaseModel):
+    property_id: int
+    bill_type: Literal["electricity", "water", "mortgage", "other"]
+    title: str = Field(min_length=1, max_length=255)
+    amount_due: Decimal = Field(gt=0, decimal_places=2)
+    recurrence: Literal["one_time", "monthly", "annually", "custom_period"]
+    due_date: date
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
+    notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_period(self) -> "PropertyBillBase":
+        if self.recurrence in {"monthly", "annually", "custom_period"}:
+            if self.period_start is None or self.period_end is None:
+                raise ValueError("period_start and period_end are required for recurring or custom-period bills")
+            if self.period_end < self.period_start:
+                raise ValueError("period_end must be on or after period_start")
+        return self
+
+
+class PropertyBillCreate(PropertyBillBase):
+    pass
+
+
+class PropertyBillUpdate(BaseModel):
+    bill_type: Optional[Literal["electricity", "water", "mortgage", "other"]] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    amount_due: Optional[Decimal] = Field(default=None, gt=0, decimal_places=2)
+    due_date: Optional[date] = None
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
+    status: Optional[Literal["unpaid", "paid"]] = None
+    paid_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_period(self) -> "PropertyBillUpdate":
+        if self.period_start and self.period_end and self.period_end < self.period_start:
+            raise ValueError("period_end must be on or after period_start")
+        return self
+
+
+class PropertyBillRead(BaseModel):
+    id: int
+    landlord_id: int
+    property_id: int
+    bill_type: str
+    title: str
+    amount_due: Decimal
+    recurrence: str
+    due_date: date
+    period_start: Optional[date]
+    period_end: Optional[date]
+    status: str
+    paid_at: Optional[datetime]
+    generated_at: Optional[datetime]
+    notes: Optional[str]
 
     model_config = ConfigDict(from_attributes=True)
 
