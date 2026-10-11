@@ -39,6 +39,77 @@ To confirm which database file the app is using and how many records it contains
 python scripts/db_status.py
 ```
 
+## Run MCP Server For AI Agents
+
+The project includes a read-only MCP server that lets AI agents query rental-management data from the same database used by the FastAPI backend.
+
+Run it as a local stdio server when the MCP client runs on the same host:
+
+```bash
+python -m app.mcp_server
+```
+
+Example local MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "rental-management": {
+      "command": "python",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "/Users/bytedance/Projects/rental-mgmt"
+    }
+  }
+}
+```
+
+Run it as a remote streamable HTTP server when MCP clients connect over the network:
+
+```bash
+RENTAL_MGMT_MCP_TRANSPORT=streamable-http \
+RENTAL_MGMT_MCP_HOST=0.0.0.0 \
+RENTAL_MGMT_MCP_PORT=8001 \
+python -m app.mcp_server
+```
+
+The remote MCP endpoint is:
+
+```text
+http://localhost:8001/mcp
+```
+
+If you prefer SSE transport:
+
+```bash
+RENTAL_MGMT_MCP_TRANSPORT=sse \
+RENTAL_MGMT_MCP_HOST=0.0.0.0 \
+RENTAL_MGMT_MCP_PORT=8001 \
+python -m app.mcp_server
+```
+
+The SSE endpoint is:
+
+```text
+http://localhost:8001/sse
+```
+
+For Docker Compose, the `mcp` service starts automatically and exposes the streamable HTTP endpoint at [http://localhost:8001/mcp](http://localhost:8001/mcp).
+
+Keep remote MCP endpoints private or protected behind your network/auth gateway because they expose rental, bill, lease, tenant, and payment data.
+
+Available MCP tools:
+
+- `database_status`: show the resolved database URL.
+- `list_landlords`: list landlord IDs and emails for filtering.
+- `list_properties`: list properties and units.
+- `list_tenants`: list tenants, rent totals, and deposit totals.
+- `list_leases`: list leases with tenants, rent shares, and deposits.
+- `list_property_bills`: list landlord-paid property bills.
+- `list_rental_bills`: list tenant-payable rental bills and balances.
+- `list_payments`: list tenant payment records.
+- `get_tenant_payment_history`: show one tenant's bills and payments.
+- `get_property_overview`: show one property's leases, bills, and rentals.
+
 ## Run Frontend Locally
 
 In a second terminal:
