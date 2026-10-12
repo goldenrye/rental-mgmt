@@ -78,6 +78,19 @@ The remote MCP endpoint is:
 http://localhost:8001/mcp
 ```
 
+To serve the remote endpoint over HTTPS, point the server at a certificate and private key (both are required; this applies to `streamable-http` and `sse`):
+
+```bash
+RENTAL_MGMT_MCP_TRANSPORT=streamable-http \
+RENTAL_MGMT_MCP_HOST=0.0.0.0 \
+RENTAL_MGMT_MCP_PORT=8001 \
+RENTAL_MGMT_MCP_SSL_CERTFILE=/path/to/fullchain.pem \
+RENTAL_MGMT_MCP_SSL_KEYFILE=/path/to/privkey.pem \
+python -m app.mcp_server
+```
+
+The endpoint is then `https://<your-host>:8001/mcp`. In Docker Compose, mount the certificate directory into the `mcp` container and set the same two variables.
+
 If you prefer SSE transport:
 
 ```bash

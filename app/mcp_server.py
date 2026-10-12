@@ -30,6 +30,8 @@ MCP_HOST = getenv("RENTAL_MGMT_MCP_HOST", "127.0.0.1").strip()
 MCP_PORT = int(getenv("RENTAL_MGMT_MCP_PORT", "8001"))
 MCP_STREAMABLE_HTTP_PATH = getenv("RENTAL_MGMT_MCP_STREAMABLE_HTTP_PATH", "/mcp").strip()
 MCP_SSE_PATH = getenv("RENTAL_MGMT_MCP_SSE_PATH", "/sse").strip()
+MCP_SSL_CERTFILE = getenv("RENTAL_MGMT_MCP_SSL_CERTFILE", "").strip()
+MCP_SSL_KEYFILE = getenv("RENTAL_MGMT_MCP_SSL_KEYFILE", "").strip()
 VALID_TRANSPORTS = {"stdio", "sse", "streamable-http"}
 
 mcp = FastMCP(
@@ -472,10 +474,29 @@ if __name__ == "__main__":
             "RENTAL_MGMT_MCP_TRANSPORT must be one of: "
             f"{', '.join(sorted(VALID_TRANSPORTS))}"
         )
+    if bool(MCP_SSL_CERTFILE) != bool(MCP_SSL_KEYFILE):
+        raise ValueError(
+            "RENTAL_MGMT_MCP_SSL_CERTFILE and RENTAL_MGMT_MCP_SSL_KEYFILE must be set together"
+        )
+    use_https = bool(MCP_SSL_CERTFILE) and MCP_TRANSPORT != "stdio"
     init_database()
     print(
         "Starting Rental Management MCP server "
-        f"with transport={MCP_TRANSPORT}, host={MCP_HOST}, port={MCP_PORT}",
+        f"with transport={MCP_TRANSPORT}, host={MCP_HOST}, port={MCP_PORT}, "
+        f"https={use_https}",
         file=sys.stderr,
     )
-    mcp.run(transport=MCP_TRANSPORT)
+    if use_https:
+        import uvicorn
+
+        app = mcp.sse_app() if MCP_TRANSPORT == "sse" else mcp.streamable_http_app()
+        uvicorn.run(
+            app,
+            host=MCP_HOST,
+            port=MCP_PORT,
+            log_level=mcp.settings.log_level.lower(),
+            ssl_certfile=MCP_SSL_CERTFILE,
+            ssl_keyfile=MCP_SSL_KEYFILE,
+        )
+    else:
+        mcp.run(transport=MCP_TRANSPORT)
