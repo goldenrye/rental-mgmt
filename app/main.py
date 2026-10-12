@@ -35,9 +35,11 @@ from app.schemas import (
     LeaseUpdate,
     LoginRequest,
     ManualBillCreate,
+    PasswordChangeRequest,
     PaymentCreate,
     PaymentRead,
     PaymentResult,
+    ProfileUpdate,
     PropertyBillCreate,
     PropertyBillRead,
     PropertyBillUpdate,
@@ -59,6 +61,9 @@ from app.security import create_access_token, hash_password, verify_password
 
 Base.metadata.create_all(bind=engine)
 with engine.begin() as connection:
+    user_columns = {column["name"] for column in inspect(connection).get_columns("users")}
+    if "display_name" not in user_columns:
+        connection.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(255)"))
     columns = {column["name"] for column in inspect(connection).get_columns("leases")}
     if "unit_id" not in columns:
         connection.execute(text("ALTER TABLE leases ADD COLUMN unit_id INTEGER"))
@@ -418,6 +423,7 @@ def register(payload: UserCreate, db: DbSession) -> User:
     user = User(
         email=str(payload.email),
         full_name=payload.full_name,
+        display_name=payload.display_name or None,
         hashed_password=hash_password(payload.password),
         role=payload.role,
     )
@@ -458,6 +464,32 @@ def oauth_token(
 @app.get("/me", response_model=UserRead)
 def me(user: CurrentUser) -> User:
     return user
+
+
+@app.patch("/me", response_model=UserRead)
+def update_profile(payload: ProfileUpdate, db: DbSession, user: CurrentUser) -> User:
+    user.full_name = payload.full_name
+    user.display_name = payload.display_name or None
+
+    if payload.new_password:
+        if not payload.current_password or not verify_password(payload.current_password, user.hashed_password):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+        user.hashed_password = hash_password(payload.new_password)
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.post("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(payload: PasswordChangeRequest, db: DbSession, user: CurrentUser) -> Response:
+    if not verify_password(payload.current_password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    user.hashed_password = hash_password(payload.new_password)
+    db.add(user)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.post("/properties", response_model=PropertyRead, status_code=status.HTTP_201_CREATED)

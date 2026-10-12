@@ -13,6 +13,7 @@ class Token(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=255)
+    display_name: Optional[str] = Field(default=None, max_length=255)
     password: str = Field(min_length=8, max_length=72)
     role: Literal["landlord", "tenant"]
 
@@ -21,6 +22,7 @@ class UserRead(BaseModel):
     id: int
     email: EmailStr
     full_name: str
+    display_name: Optional[str] = None
     role: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -29,6 +31,18 @@ class UserRead(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=72)
+
+
+class ProfileUpdate(BaseModel):
+    full_name: str = Field(min_length=1, max_length=255)
+    display_name: Optional[str] = Field(default=None, max_length=255)
+    current_password: Optional[str] = None
+    new_password: Optional[str] = Field(default=None, min_length=8, max_length=72)
 
 
 class PropertyBase(BaseModel):

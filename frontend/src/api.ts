@@ -4,6 +4,7 @@ export type User = {
   id: number;
   email: string;
   full_name: string;
+  display_name?: string | null;
   role: UserRole;
 };
 
@@ -157,6 +158,14 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   me: () => request<User>("/me"),
+  updateProfile: (payload: {
+    full_name: string;
+    display_name?: string | null;
+    current_password?: string;
+    new_password?: string;
+  }) => request<User>("/me", { method: "PATCH", body: JSON.stringify(payload) }),
+  changePassword: (payload: { current_password: string; new_password: string }) =>
+    request<void>("/me/password", { method: "POST", body: JSON.stringify(payload) }),
   listProperties: () => request<RentalProperty[]>("/properties"),
   createProperty: (payload: { name: string; address: string; description?: string }) =>
     request<RentalProperty>("/properties", { method: "POST", body: JSON.stringify(payload) }),

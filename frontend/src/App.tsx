@@ -17,14 +17,14 @@ import {
 } from "./api";
 import "./styles.css";
 
-type Tab = "properties" | "units" | "tenants" | "leases" | "bill" | "bills";
+type Tab = "properties" | "units" | "tenants" | "leases" | "bills" | "bill";
 const tabLabels: Record<Tab, string> = {
   properties: "properties",
   units: "units",
   tenants: "tenants",
   leases: "leases",
-  bill: "bill",
   bills: "rental",
+  bill: "bill",
 };
 
 type PropertyForm = {
@@ -68,6 +68,14 @@ type ManualBillForm = {
   notes: string;
 };
 
+type ProfileForm = {
+  full_name: string;
+  display_name: string;
+  current_password: string;
+  new_password: string;
+  confirm_password: string;
+};
+
 const emptyProperty: PropertyForm = { name: "", address: "", description: "" };
 const emptyTenant: TenantForm = { full_name: "", email: "", phone: "", notes: "" };
 const emptyUnit: UnitForm = { property_id: "", name: "", description: "" };
@@ -90,6 +98,13 @@ const emptyManualBill: ManualBillForm = {
   period_start: "",
   period_end: "",
   notes: "",
+};
+const emptyProfileForm: ProfileForm = {
+  full_name: "",
+  display_name: "",
+  current_password: "",
+  new_password: "",
+  confirm_password: "",
 };
 
 function formatDateInput(date: Date): string {
@@ -141,12 +156,15 @@ function App() {
   const [tenantForm, setTenantForm] = useState<TenantForm>(emptyTenant);
   const [leaseForm, setLeaseForm] = useState<LeaseForm>(emptyLease);
   const [manualBillForm, setManualBillForm] = useState<ManualBillForm>(emptyManualBill);
+  const [profileForm, setProfileForm] = useState<ProfileForm>(emptyProfileForm);
   const [editingPropertyId, setEditingPropertyId] = useState<number | null>(null);
   const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
   const [editingTenantId, setEditingTenantId] = useState<number | null>(null);
   const [editingLeaseId, setEditingLeaseId] = useState<number | null>(null);
   const [leaseModalOpen, setLeaseModalOpen] = useState(false);
   const [billModalOpen, setBillModalOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [expandedLeaseId, setExpandedLeaseId] = useState<number | null>(null);
   const [selectedPaymentTenantId, setSelectedPaymentTenantId] = useState<number | null>(null);
   const [tenantDropdownOpen, setTenantDropdownOpen] = useState(false);
@@ -344,8 +362,63 @@ function App() {
     setExpandedLeaseId(null);
     setLeaseModalOpen(false);
     setBillModalOpen(false);
+    setProfileModalOpen(false);
+    setProfileMenuOpen(false);
     setTenantDropdownOpen(false);
     setMessage("Signed out.");
+  }
+
+  function openProfileModal() {
+    setProfileForm({
+      full_name: user?.full_name ?? "",
+      display_name: user?.display_name ?? "",
+      current_password: "",
+      new_password: "",
+      confirm_password: "",
+    });
+    setProfileMenuOpen(false);
+    setProfileModalOpen(true);
+  }
+
+  function closeProfileModal() {
+    setProfileModalOpen(false);
+    setProfileForm(emptyProfileForm);
+  }
+
+  async function submitProfileUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (profileForm.new_password || profileForm.confirm_password || profileForm.current_password) {
+      if (profileForm.new_password !== profileForm.confirm_password) {
+        setError("New password and confirmation do not match.");
+        setMessage("");
+        return;
+      }
+      if (profileForm.new_password.length < 8) {
+        setError("New password must be at least 8 characters.");
+        setMessage("");
+        return;
+      }
+      if (!profileForm.current_password) {
+        setError("Current password is required to change password.");
+        setMessage("");
+        return;
+      }
+    }
+    if (!profileForm.full_name.trim()) {
+      setError("Full name is required.");
+      setMessage("");
+      return;
+    }
+    await withStatus(async () => {
+      const updatedUser = await api.updateProfile({
+        full_name: profileForm.full_name.trim(),
+        display_name: profileForm.display_name.trim() || null,
+        current_password: profileForm.new_password ? profileForm.current_password : undefined,
+        new_password: profileForm.new_password || undefined,
+      });
+      setUser(updatedUser);
+      closeProfileModal();
+    }, "Profile updated.");
   }
 
   async function submitProperty(event: FormEvent<HTMLFormElement>) {
@@ -600,18 +673,138 @@ function App() {
     );
   }
 
+  const profileDisplayName = user.display_name || user.full_name;
+  const profileInitial = profileDisplayName.charAt(0).toUpperCase();
+
   return (
     <main className="app-shell">
       <header className="topbar">
         <div>
           <p className="eyebrow">Rental Management</p>
-          <h1>Welcome, {user.full_name}</h1>
+          <h1>Welcome, {profileDisplayName}</h1>
           <p className="muted">{user.role === "landlord" ? "Landlord dashboard" : "Tenant account"}</p>
         </div>
-        <button onClick={logout} className="secondary">
-          Logout
-        </button>
+        <div className="profile-menu">
+          <button
+            className="profile-trigger"
+            aria-label="Open profile menu"
+            aria-expanded={profileMenuOpen}
+            onClick={() => setProfileMenuOpen((isOpen) => !isOpen)}
+          >
+            <span className="profile-icon" aria-hidden="true">
+              {profileInitial}
+            </span>
+            <span className="profile-trigger-text">Profile</span>
+          </button>
+
+          {profileMenuOpen && (
+            <section className="profile-panel card">
+              <div className="profile-panel-header">
+                <span className="profile-icon large" aria-hidden="true">
+                  {profileInitial}
+                </span>
+                <div>
+                  <h2>{profileDisplayName}</h2>
+                  <p className="muted">{user.email}</p>
+                </div>
+              </div>
+
+              <div className="detail-grid compact">
+                <div>
+                  <span>Full name</span>
+                  <strong>{user.full_name}</strong>
+                </div>
+                <div>
+                  <span>Display name</span>
+                  <strong>{user.display_name || "Not set"}</strong>
+                </div>
+                <div>
+                  <span>Role</span>
+                  <strong>{user.role}</strong>
+                </div>
+              </div>
+
+              <button type="button" onClick={openProfileModal} className="primary logout-button">
+                Edit Profile
+              </button>
+              <button onClick={logout} className="secondary logout-button">
+                Logout
+              </button>
+            </section>
+          )}
+        </div>
       </header>
+
+      {profileModalOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+          <form onSubmit={submitProfileUpdate} className="card form modal-card">
+            <div className="card-header">
+              <h2 id="profile-modal-title">Edit Profile</h2>
+              <button type="button" className="secondary" onClick={closeProfileModal}>
+                Close
+              </button>
+            </div>
+            <label>
+              Full name
+              <input
+                required
+                maxLength={255}
+                value={profileForm.full_name}
+                onChange={(event) => setProfileForm({ ...profileForm, full_name: event.target.value })}
+              />
+            </label>
+            <label>
+              Display name
+              <input
+                maxLength={255}
+                placeholder="Name shown in the app"
+                value={profileForm.display_name}
+                onChange={(event) => setProfileForm({ ...profileForm, display_name: event.target.value })}
+              />
+            </label>
+            <div className="form-section">
+              <h3>Change password</h3>
+              <p className="muted">Leave password fields blank if you only want to update your names.</p>
+              <label>
+                Current password
+                <input
+                  type="password"
+                  value={profileForm.current_password}
+                  onChange={(event) => setProfileForm({ ...profileForm, current_password: event.target.value })}
+                />
+              </label>
+              <label>
+                New password
+                <input
+                  minLength={8}
+                  maxLength={72}
+                  type="password"
+                  value={profileForm.new_password}
+                  onChange={(event) => setProfileForm({ ...profileForm, new_password: event.target.value })}
+                />
+              </label>
+              <label>
+                Confirm new password
+                <input
+                  minLength={8}
+                  maxLength={72}
+                  type="password"
+                  value={profileForm.confirm_password}
+                  onChange={(event) => setProfileForm({ ...profileForm, confirm_password: event.target.value })}
+                />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button disabled={loading} className="primary">
+                Save Profile
+              </button>
+              <button type="button" className="secondary" onClick={closeProfileModal}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <Status error={error} message={message} />
 
