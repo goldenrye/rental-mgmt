@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "rental-management": {
+      "type": "stdio",
+      "command": "//Users/bytedance/Projects/.venv/bin/python",
+      "args": [
+        "-m",
+        "app.mcp_server"
+      ],
+      "env": {
+        "PYTHONPATH": "/Users/bytedance/Projects/rental-mgmt"
+      }
+    }
+  }
+}

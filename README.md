@@ -78,6 +78,26 @@ The remote MCP endpoint is:
 http://localhost:8001/mcp
 ```
 
+Remote MCP authentication is enabled by default. The MCP server validates OAuth bearer JWTs issued by the FastAPI app, so `JWT_SECRET_KEY` and `JWT_ALGORITHM` must match between the API and MCP server.
+
+Get a landlord access token:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/oauth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password&username=owner@example.com&password=password123" \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+```
+
+Register the remote MCP server in Claude Code with the bearer token:
+
+```bash
+claude mcp add --transport http rental-management http://localhost:8001/mcp \
+  --header "Authorization: Bearer $TOKEN"
+```
+
+Treat any bearer token like a password. If it is leaked while valid, anyone who can reach the MCP endpoint can access rental data. Tokens expire according to `ACCESS_TOKEN_EXPIRE_MINUTES`; rotate `JWT_SECRET_KEY` to revoke all issued JWTs.
+
 To serve the remote endpoint over HTTPS, point the server at a certificate and private key (both are required; this applies to `streamable-http` and `sse`):
 
 ```bash

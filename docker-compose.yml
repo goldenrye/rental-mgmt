@@ -26,9 +26,12 @@ services:
       - "8001:8001"
     environment:
       DATABASE_URL: postgresql+psycopg://rental:rental@db:5432/rental_mgmt
+      JWT_SECRET_KEY: replace-this-with-a-long-random-secret
       RENTAL_MGMT_MCP_TRANSPORT: streamable-http
       RENTAL_MGMT_MCP_HOST: 0.0.0.0
       RENTAL_MGMT_MCP_PORT: 8001
+      RENTAL_MGMT_MCP_AUTH_ENABLED: "true"
+      RENTAL_MGMT_MCP_AUTH_SERVER_URL: http://localhost:8000
     depends_on:
       - db
 

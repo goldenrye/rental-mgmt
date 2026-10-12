@@ -4,8 +4,9 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import inspect, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -438,6 +439,19 @@ def login(payload: LoginRequest, db: DbSession) -> Token:
     user = db.scalar(select(User).where(User.email == payload.email))
     if user is None or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    return Token(access_token=create_access_token(str(user.id)))
+
+
+@app.post("/oauth/token", response_model=Token)
+def oauth_token(
+    db: DbSession,
+    form: OAuth2PasswordRequestForm = Depends(),
+) -> Token:
+    user = db.scalar(select(User).where(User.email == form.username))
+    if user is None or not verify_password(form.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+    if user.role != UserRole.landlord.value:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Landlord access is required")
     return Token(access_token=create_access_token(str(user.id)))
 
 

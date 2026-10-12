@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 from datetime import date, datetime
 from decimal import Decimal
+import json
 from os import getenv
 import sys
 from typing import Any, Optional
 
+import jwt
 from mcp.server.fastmcp import FastMCP
 from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session, selectinload
@@ -22,7 +22,9 @@ from app.models import (
     RentalUnit,
     TenantProfile,
     User,
+    UserRole,
 )
+from app.security import decode_access_token
 
 
 MCP_TRANSPORT = getenv("RENTAL_MGMT_MCP_TRANSPORT", "stdio").strip()
@@ -32,6 +34,9 @@ MCP_STREAMABLE_HTTP_PATH = getenv("RENTAL_MGMT_MCP_STREAMABLE_HTTP_PATH", "/mcp"
 MCP_SSE_PATH = getenv("RENTAL_MGMT_MCP_SSE_PATH", "/sse").strip()
 MCP_SSL_CERTFILE = getenv("RENTAL_MGMT_MCP_SSL_CERTFILE", "").strip()
 MCP_SSL_KEYFILE = getenv("RENTAL_MGMT_MCP_SSL_KEYFILE", "").strip()
+MCP_AUTH_ENABLED = getenv("RENTAL_MGMT_MCP_AUTH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+MCP_PUBLIC_BASE_URL = getenv("RENTAL_MGMT_MCP_PUBLIC_BASE_URL", f"http://{MCP_HOST}:{MCP_PORT}").strip().rstrip("/")
+MCP_AUTH_SERVER_URL = getenv("RENTAL_MGMT_MCP_AUTH_SERVER_URL", "http://localhost:8000").strip().rstrip("/")
 VALID_TRANSPORTS = {"stdio", "sse", "streamable-http"}
 
 mcp = FastMCP(
@@ -227,13 +232,13 @@ def resolve_landlord_id(db: Session, landlord_id: Optional[int], landlord_email:
 
 
 @mcp.tool()
-def database_status() -> dict[str, Any]:
+def database_status():
     """Return the resolved database URL used by the MCP server."""
     return {"database_url": database_url}
 
 
 @mcp.tool()
-def list_landlords() -> list[dict[str, Any]]:
+def list_landlords():
     """List landlord profiles so agents can find a landlord_id for other tools."""
     with SessionLocal() as db:
         landlords = db.scalars(select(LandlordProfile).options(selectinload(LandlordProfile.user))).all()
@@ -241,7 +246,7 @@ def list_landlords() -> list[dict[str, Any]]:
 
 
 @mcp.tool()
-def list_properties(landlord_id: Optional[int] = None, landlord_email: Optional[str] = None) -> list[dict[str, Any]]:
+def list_properties(landlord_id: int = None, landlord_email: str = None):
     """List rental properties and units, optionally filtered by landlord_id or landlord_email."""
     with SessionLocal() as db:
         resolved_landlord_id = resolve_landlord_id(db, landlord_id, landlord_email)
@@ -252,7 +257,7 @@ def list_properties(landlord_id: Optional[int] = None, landlord_email: Optional[
 
 
 @mcp.tool()
-def list_tenants(landlord_id: Optional[int] = None, landlord_email: Optional[str] = None) -> list[dict[str, Any]]:
+def list_tenants(landlord_id: int = None, landlord_email: str = None):
     """List tenants, including total lease rent share and deposit amount."""
     with SessionLocal() as db:
         resolved_landlord_id = resolve_landlord_id(db, landlord_id, landlord_email)
@@ -264,11 +269,11 @@ def list_tenants(landlord_id: Optional[int] = None, landlord_email: Optional[str
 
 @mcp.tool()
 def list_leases(
-    landlord_id: Optional[int] = None,
-    landlord_email: Optional[str] = None,
-    property_id: Optional[int] = None,
-    tenant_id: Optional[int] = None,
-) -> list[dict[str, Any]]:
+    landlord_id: int = None,
+    landlord_email: str = None,
+    property_id: int = None,
+    tenant_id: int = None,
+):
     """List leases with property, unit, tenant rent share, and deposit details."""
     with SessionLocal() as db:
         resolved_landlord_id = resolve_landlord_id(db, landlord_id, landlord_email)
@@ -288,14 +293,14 @@ def list_leases(
 
 @mcp.tool()
 def list_property_bills(
-    landlord_id: Optional[int] = None,
-    landlord_email: Optional[str] = None,
-    property_id: Optional[int] = None,
-    status: Optional[str] = None,
-    bill_type: Optional[str] = None,
-    due_from: Optional[str] = None,
-    due_to: Optional[str] = None,
-) -> list[dict[str, Any]]:
+    landlord_id: int = None,
+    landlord_email: str = None,
+    property_id: int = None,
+    status: str = None,
+    bill_type: str = None,
+    due_from: str = None,
+    due_to: str = None,
+):
     """List landlord property bills, optionally filtered by property, status, type, and due-date range."""
     start_date = parse_date(due_from, "due_from")
     end_date = parse_date(due_to, "due_to")
@@ -320,14 +325,14 @@ def list_property_bills(
 
 @mcp.tool()
 def list_rental_bills(
-    landlord_id: Optional[int] = None,
-    landlord_email: Optional[str] = None,
-    tenant_id: Optional[int] = None,
-    property_id: Optional[int] = None,
-    status: Optional[str] = None,
-    due_from: Optional[str] = None,
-    due_to: Optional[str] = None,
-) -> list[dict[str, Any]]:
+    landlord_id: int = None,
+    landlord_email: str = None,
+    tenant_id: int = None,
+    property_id: int = None,
+    status: str = None,
+    due_from: str = None,
+    due_to: str = None,
+):
     """List tenant-payable rental bills, optionally filtered by tenant, property, status, and due-date range."""
     start_date = parse_date(due_from, "due_from")
     end_date = parse_date(due_to, "due_to")
@@ -356,12 +361,12 @@ def list_rental_bills(
 
 @mcp.tool()
 def list_payments(
-    landlord_id: Optional[int] = None,
-    landlord_email: Optional[str] = None,
-    tenant_id: Optional[int] = None,
-    paid_from: Optional[str] = None,
-    paid_to: Optional[str] = None,
-) -> list[dict[str, Any]]:
+    landlord_id: int = None,
+    landlord_email: str = None,
+    tenant_id: int = None,
+    paid_from: str = None,
+    paid_to: str = None,
+):
     """List tenant payment records with related rental bill context."""
     start_date = parse_date(paid_from, "paid_from")
     end_date = parse_date(paid_to, "paid_to")
@@ -385,7 +390,7 @@ def list_payments(
 
 
 @mcp.tool()
-def get_tenant_payment_history(tenant_id: int) -> dict[str, Any]:
+def get_tenant_payment_history(tenant_id: int):
     """Return one tenant's profile, rental bills, and payment history."""
     with SessionLocal() as db:
         tenant = db.scalar(select(TenantProfile).where(TenantProfile.id == tenant_id))
@@ -421,7 +426,7 @@ def get_tenant_payment_history(tenant_id: int) -> dict[str, Any]:
 
 
 @mcp.tool()
-def get_property_overview(property_id: int) -> dict[str, Any]:
+def get_property_overview(property_id: int):
     """Return one property's units, leases, property bills, and tenant-payable rental bills."""
     with SessionLocal() as db:
         property_ = db.scalar(
@@ -492,6 +497,136 @@ class EnsureMcpAcceptHeader:
         await self.app(scope, receive, send)
 
 
+class McpOAuthMiddleware:
+    """Protect remote MCP transports with OAuth bearer-token authentication."""
+
+    PUBLIC_PATHS = {
+        "/health",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
+        "/.well-known/oauth-authorization-server",
+    }
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+        if method == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+        if path == "/health":
+            await self.send_json(send, 200, {"status": "ok"})
+            return
+        if path in {
+            "/.well-known/oauth-protected-resource",
+            "/.well-known/oauth-protected-resource/mcp",
+        }:
+            await self.send_json(send, 200, protected_resource_metadata())
+            return
+        if path == "/.well-known/oauth-authorization-server":
+            await self.send_json(send, 200, authorization_server_metadata())
+            return
+
+        token = self.extract_bearer_token(scope)
+        if token is None:
+            await self.send_unauthorized(send, "missing_token", "Authorization bearer token is required")
+            return
+        try:
+            validate_mcp_bearer_token(token)
+        except ValueError as exc:
+            await self.send_unauthorized(send, "invalid_token", str(exc))
+            return
+
+        await self.app(scope, receive, send)
+
+    @staticmethod
+    def extract_bearer_token(scope: Any) -> Optional[str]:
+        for key, value in scope.get("headers", []):
+            if key.lower() != b"authorization":
+                continue
+            authorization = value.decode("latin-1")
+            scheme, _, token = authorization.partition(" ")
+            if scheme.lower() == "bearer" and token.strip():
+                return token.strip()
+        return None
+
+    @staticmethod
+    async def send_json(send: Any, status_code: int, payload: dict[str, Any], headers: Optional[list[tuple[bytes, bytes]]] = None) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        response_headers = [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode("ascii")),
+        ]
+        if headers:
+            response_headers.extend(headers)
+        await send({"type": "http.response.start", "status": status_code, "headers": response_headers})
+        await send({"type": "http.response.body", "body": body})
+
+    async def send_unauthorized(self, send: Any, error: str, description: str) -> None:
+        authenticate = (
+            'Bearer realm="rental-management-mcp", '
+            f'error="{error}", '
+            f'error_description="{description}", '
+            f'resource_metadata="{MCP_PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/mcp"'
+        )
+        await self.send_json(
+            send,
+            401,
+            {"error": error, "error_description": description},
+            headers=[(b"www-authenticate", authenticate.encode("latin-1"))],
+        )
+
+
+def protected_resource_metadata() -> dict[str, Any]:
+    return {
+        "resource": MCP_PUBLIC_BASE_URL,
+        "authorization_servers": [MCP_AUTH_SERVER_URL],
+        "bearer_methods_supported": ["header"],
+        "scopes_supported": ["rental:read"],
+    }
+
+
+def authorization_server_metadata() -> dict[str, Any]:
+    return {
+        "issuer": MCP_AUTH_SERVER_URL,
+        "token_endpoint_auth_methods_supported": ["none"],
+        "scopes_supported": ["rental:read"],
+        "response_types_supported": ["token"],
+        "grant_types_supported": ["client_credentials"],
+        "token_endpoint": f"{MCP_AUTH_SERVER_URL}/auth/login",
+    }
+
+
+def validate_mcp_bearer_token(token: str) -> None:
+    try:
+        payload = decode_access_token(token)
+    except jwt.PyJWTError as exc:
+        raise ValueError("Invalid or expired JWT access token") from exc
+
+    subject = payload.get("sub")
+    if subject is None:
+        raise ValueError("JWT subject is missing")
+
+    with SessionLocal() as db:
+        user = db.get(User, int(subject))
+        if user is None:
+            raise ValueError("JWT user no longer exists")
+        if user.role != UserRole.landlord.value:
+            raise ValueError("Landlord access is required for MCP")
+
+
+def secure_remote_mcp_app(app: Any) -> Any:
+    if not MCP_AUTH_ENABLED:
+        return app
+    return McpOAuthMiddleware(app)
+
+
 if __name__ == "__main__":
     if MCP_TRANSPORT not in VALID_TRANSPORTS:
         raise ValueError(
@@ -507,7 +642,7 @@ if __name__ == "__main__":
     print(
         "Starting Rental Management MCP server "
         f"with transport={MCP_TRANSPORT}, host={MCP_HOST}, port={MCP_PORT}, "
-        f"https={use_https}",
+        f"https={use_https}, auth_enabled={MCP_AUTH_ENABLED}, auth_mode=oauth-jwt",
         file=sys.stderr,
     )
     if MCP_TRANSPORT == "stdio":
@@ -516,6 +651,7 @@ if __name__ == "__main__":
         import uvicorn
 
         app = mcp.sse_app() if MCP_TRANSPORT == "sse" else EnsureMcpAcceptHeader(mcp.streamable_http_app())
+        app = secure_remote_mcp_app(app)
         ssl_options = (
             {"ssl_certfile": MCP_SSL_CERTFILE, "ssl_keyfile": MCP_SSL_KEYFILE} if use_https else {}
         )
