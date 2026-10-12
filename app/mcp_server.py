@@ -468,6 +468,30 @@ def get_property_overview(property_id: int) -> dict[str, Any]:
         }
 
 
+class EnsureMcpAcceptHeader:
+    """Fill in the Accept header the streamable-http transport requires.
+
+    Some clients (e.g. Claude Desktop connectors) omit or narrow the Accept header,
+    which the MCP SDK rejects with 406 Not Acceptable.
+    """
+
+    REQUIRED = ("application/json", "text/event-stream")
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            headers = [(k, v) for k, v in scope["headers"] if k != b"accept"]
+            accept = b", ".join(v for k, v in scope["headers"] if k == b"accept").decode("latin-1")
+            missing = [t for t in self.REQUIRED if t not in accept and "*/*" not in accept]
+            if missing or "*/*" in accept:
+                accept = ", ".join(filter(None, [accept, *self.REQUIRED]))
+            headers.append((b"accept", accept.encode("latin-1")))
+            scope = {**scope, "headers": headers}
+        await self.app(scope, receive, send)
+
+
 if __name__ == "__main__":
     if MCP_TRANSPORT not in VALID_TRANSPORTS:
         raise ValueError(
@@ -486,17 +510,19 @@ if __name__ == "__main__":
         f"https={use_https}",
         file=sys.stderr,
     )
-    if use_https:
+    if MCP_TRANSPORT == "stdio":
+        mcp.run(transport=MCP_TRANSPORT)
+    else:
         import uvicorn
 
-        app = mcp.sse_app() if MCP_TRANSPORT == "sse" else mcp.streamable_http_app()
+        app = mcp.sse_app() if MCP_TRANSPORT == "sse" else EnsureMcpAcceptHeader(mcp.streamable_http_app())
+        ssl_options = (
+            {"ssl_certfile": MCP_SSL_CERTFILE, "ssl_keyfile": MCP_SSL_KEYFILE} if use_https else {}
+        )
         uvicorn.run(
             app,
             host=MCP_HOST,
             port=MCP_PORT,
             log_level=mcp.settings.log_level.lower(),
-            ssl_certfile=MCP_SSL_CERTFILE,
-            ssl_keyfile=MCP_SSL_KEYFILE,
+            **ssl_options,
         )
-    else:
-        mcp.run(transport=MCP_TRANSPORT)
