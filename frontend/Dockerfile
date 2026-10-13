@@ -14,7 +14,9 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.http.conf /etc/nginx/rental-mgmt/http.conf
+COPY nginx.https.conf.template /etc/nginx/rental-mgmt/https.conf.template
+COPY --chmod=755 select-nginx-config.sh /docker-entrypoint.d/40-select-nginx-config.sh
 COPY --from=build /app/dist /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 80 443

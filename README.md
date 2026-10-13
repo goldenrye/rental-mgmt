@@ -164,6 +164,27 @@ docker compose up --build
 
 The frontend listens on [http://localhost:5173](http://localhost:5173). The API listens on [http://localhost:8000](http://localhost:8000), backed by Postgres.
 
+### Serving the frontend over HTTPS
+
+The frontend's nginx serves HTTPS when both `NGINX_SSL_CERTFILE` and `NGINX_SSL_KEYFILE` are set; port 80 then redirects to HTTPS on 443. nginx also proxies `/api/` to the `api` service, so build the frontend with `VITE_API_BASE_URL=/api` to keep every browser request on the same HTTPS origin (a page served over HTTPS cannot call a plain-HTTP API). For example, in a `docker-compose.override.yml`:
+
+```yaml
+services:
+  frontend:
+    build:
+      args:
+        VITE_API_BASE_URL: /api
+    ports:
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    environment:
+      NGINX_SSL_CERTFILE: /etc/letsencrypt/live/<your-host>/fullchain.pem
+      NGINX_SSL_KEYFILE: /etc/letsencrypt/live/<your-host>/privkey.pem
+```
+
+nginx reads the certificate at startup, so after a renewal run `docker compose restart frontend mcp`.
+
 ### Compose configuration
 
 `api` and `mcp` share their database and JWT settings through the `x-backend-env` anchor at the top of `docker-compose.yml`, so both services always use the same `DATABASE_URL` and `JWT_SECRET_KEY`. They must match, because the MCP server validates tokens issued by the API.
