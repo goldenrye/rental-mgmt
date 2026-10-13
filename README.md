@@ -164,6 +164,40 @@ docker compose up --build
 
 The frontend listens on [http://localhost:5173](http://localhost:5173). The API listens on [http://localhost:8000](http://localhost:8000), backed by Postgres.
 
+### Compose configuration
+
+`api` and `mcp` share their database and JWT settings through the `x-backend-env` anchor at the top of `docker-compose.yml`, so both services always use the same `DATABASE_URL` and `JWT_SECRET_KEY`. They must match, because the MCP server validates tokens issued by the API.
+
+Set a real JWT secret before running anywhere other than your laptop. Compose reads it from your shell or from a `.env` file next to `docker-compose.yml`; otherwise it falls back to an insecure placeholder:
+
+```bash
+echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" > .env
+docker compose up -d --build
+```
+
+Changing `JWT_SECRET_KEY` invalidates every token already issued, so clients must sign in again.
+
+Startup and restart behavior:
+
+- `db` has a `pg_isready` health check. `api` and `mcp` wait until Postgres is healthy before starting, which avoids connection errors on first boot.
+- Every service uses `restart: unless-stopped`, so containers come back after a crash or host reboot. Use `docker compose stop` or `docker compose down` to keep them stopped.
+
+### MCP public URL
+
+`RENTAL_MGMT_MCP_PUBLIC_BASE_URL` is the address MCP clients use to reach the MCP server. It is advertised in the OAuth metadata (`/.well-known/oauth-protected-resource/mcp` and the `WWW-Authenticate` header on 401 responses), so clients use it to discover how to authenticate. If unset, it defaults to `http://<RENTAL_MGMT_MCP_HOST>:<RENTAL_MGMT_MCP_PORT>`, which becomes the unreachable `http://0.0.0.0:8001` inside Docker.
+
+The Compose default is `http://localhost:8001`, which works for local clients only. When deploying, set it to the externally reachable URL without the `/mcp` suffix, and point `RENTAL_MGMT_MCP_AUTH_SERVER_URL` at the public API URL. For example, in a `docker-compose.override.yml`:
+
+```yaml
+services:
+  mcp:
+    environment:
+      RENTAL_MGMT_MCP_PUBLIC_BASE_URL: https://mcp.example.com
+      RENTAL_MGMT_MCP_AUTH_SERVER_URL: https://api.example.com
+```
+
+Docker Compose merges `docker-compose.override.yml` automatically on `docker compose up`.
+
 ## Public Cloud Deployment
 
 Build and deploy the Docker image to any container platform such as AWS ECS, Google Cloud Run, Azure Container Apps, Kubernetes, or a VM.
