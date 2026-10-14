@@ -79,7 +79,7 @@ export type PropertyBill = {
   bill_type: "electricity" | "water" | "mortgage" | "insurance" | "property_tax" | "maintenance" | "other";
   title: string;
   amount_due: string;
-  recurrence: "one_time" | "monthly" | "annually" | "custom_period";
+  recurrence: "one_time" | "monthly" | "bi_monthly" | "semi_annually" | "annually" | "custom_period";
   due_date: string;
   period_start?: string | null;
   period_end?: string | null;
@@ -205,7 +205,7 @@ export const api = {
     bill_type: "electricity" | "water" | "mortgage" | "insurance" | "property_tax" | "maintenance" | "other";
     title: string;
     amount_due: string;
-    recurrence: "one_time" | "monthly" | "annually" | "custom_period";
+    recurrence: "one_time" | "monthly" | "bi_monthly" | "semi_annually" | "annually" | "custom_period";
     due_date: string;
     period_start?: string;
     period_end?: string;

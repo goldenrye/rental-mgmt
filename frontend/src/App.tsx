@@ -61,7 +61,7 @@ type ManualBillForm = {
   bill_type: "electricity" | "water" | "mortgage" | "insurance" | "property_tax" | "maintenance" | "other";
   title: string;
   amount_due: string;
-  recurrence: "one_time" | "monthly" | "annually" | "custom_period";
+  recurrence: "one_time" | "monthly" | "bi_monthly" | "semi_annually" | "annually" | "custom_period";
   due_date: string;
   period_start: string;
   period_end: string;
@@ -1390,7 +1390,13 @@ function App() {
                           </div>
                           <div className="detail-item">
                             <span>Repeat</span>
-                            <strong>{bill.recurrence.replace("_", " ")}</strong>
+                            <strong>
+                              {bill.recurrence === "semi_annually"
+                                ? "Every six months"
+                                : bill.recurrence === "bi_monthly"
+                                  ? "Every two months"
+                                  : bill.recurrence.replace("_", " ")}
+                            </strong>
                           </div>
                           <div className="detail-item">
                             <span>Tenant Bill</span>
@@ -1501,6 +1507,8 @@ function App() {
                       >
                         <option value="one_time">One-time bill</option>
                         <option value="monthly">Repeated monthly bill</option>
+                        <option value="bi_monthly">Repeated bi-monthly bill (every two months)</option>
+                        <option value="semi_annually">Repeated bill every six months</option>
                         <option value="annually">Repeated annual bill</option>
                         <option value="custom_period">Bill for a specified period</option>
                       </select>

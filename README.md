@@ -17,7 +17,11 @@ Cloud-ready rental management application with a FastAPI backend and React front
 
 For leases with multiple tenants, the landlord assigns each tenant's monthly rent share and deposit. Tenant rent shares must add up to the lease monthly rent.
 
-Bill generation is current-month only. When a lease starts or ends mid-month, the bill is prorated by active lease days in that month. The backend also runs an in-process scheduler that automatically generates the current month bill on the 1st day of each month.
+Automatic rent bill generation is current-month only. When a lease starts or ends mid-month, the bill is prorated by active lease days in that month. The backend also runs an in-process scheduler that automatically generates the current month bill on the 1st day of each month.
+
+Property and manual bills support `bi_monthly` recurrence (every two months, not twice a month). In Create Property Bill, select **Repeated bi-monthly bill (every two months)** and supply the period start and end. Like monthly recurrence, bills are created upfront starting in the period's first month, then every second month through the period's final month. The due date supplies the day of the month, clamped to the last day for shorter months; the amount is charged once per generated bill.
+
+For bills repeating every six months, select **Repeated bill every six months** (`semi_annually` in the API). This uses the same period and due-day rules, generating a bill in the period's first month and every sixth month afterward.
 
 ## Run Backend Locally
 

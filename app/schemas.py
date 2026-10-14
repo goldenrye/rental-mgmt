@@ -219,14 +219,14 @@ class ManualBillCreate(BaseModel):
     tenant_ids: list[int] = Field(min_length=1)
     title: str = Field(min_length=1, max_length=255)
     amount_due: Decimal = Field(gt=0, decimal_places=2)
-    recurrence: Literal["one_time", "monthly", "annually", "custom_period"]
+    recurrence: Literal["one_time", "monthly", "bi_monthly", "semi_annually", "annually", "custom_period"]
     due_date: date
     period_start: Optional[date] = None
     period_end: Optional[date] = None
 
     @model_validator(mode="after")
     def validate_period(self) -> "ManualBillCreate":
-        if self.recurrence in {"monthly", "annually", "custom_period"}:
+        if self.recurrence in {"monthly", "bi_monthly", "semi_annually", "annually", "custom_period"}:
             if self.period_start is None or self.period_end is None:
                 raise ValueError("period_start and period_end are required for recurring or custom-period bills")
             if self.period_end < self.period_start:
@@ -239,7 +239,7 @@ class PropertyBillBase(BaseModel):
     bill_type: Literal["electricity", "water", "mortgage", "insurance", "property_tax", "maintenance", "other"]
     title: str = Field(min_length=1, max_length=255)
     amount_due: Decimal = Field(gt=0, decimal_places=2)
-    recurrence: Literal["one_time", "monthly", "annually", "custom_period"]
+    recurrence: Literal["one_time", "monthly", "bi_monthly", "semi_annually", "annually", "custom_period"]
     due_date: date
     period_start: Optional[date] = None
     period_end: Optional[date] = None
@@ -247,7 +247,7 @@ class PropertyBillBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_period(self) -> "PropertyBillBase":
-        if self.recurrence in {"monthly", "annually", "custom_period"}:
+        if self.recurrence in {"monthly", "bi_monthly", "semi_annually", "annually", "custom_period"}:
             if self.period_start is None or self.period_end is None:
                 raise ValueError("period_start and period_end are required for recurring or custom-period bills")
             if self.period_end < self.period_start:

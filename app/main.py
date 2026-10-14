@@ -11,7 +11,7 @@ from sqlalchemy import inspect, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
-from app.billing import apply_payment, generate_bills_for_lease, money, month_window, monthly_due_date
+from app.billing import apply_payment, generate_bills_for_lease, iter_months, money, month_window, monthly_due_date
 from app.config import get_settings
 from app.database import Base, SessionLocal, database_url, engine
 from app.deps import CurrentUser, DbSession, Landlord
@@ -167,19 +167,18 @@ def iter_annual_dates(start: date, end: date) -> list[date]:
     return dates
 
 
-def manual_bill_due_dates(payload: ManualBillCreate) -> list[date]:
+def manual_bill_due_dates(payload: ManualBillCreate | PropertyBillCreate) -> list[date]:
     if payload.recurrence in {"one_time", "custom_period"}:
         return [payload.due_date]
     if payload.period_start is None or payload.period_end is None:
         return [payload.due_date]
-    if payload.recurrence == "monthly":
-        cursor = date(payload.period_start.year, payload.period_start.month, 1)
-        end = date(payload.period_end.year, payload.period_end.month, 1)
-        dates: list[date] = []
-        while cursor <= end:
-            dates.append(monthly_due_date(cursor.year, cursor.month, payload.due_date.day))
-            cursor = date(cursor.year + 1, 1, 1) if cursor.month == 12 else date(cursor.year, cursor.month + 1, 1)
-        return dates
+    month_steps = {"monthly": 1, "bi_monthly": 2, "semi_annually": 6}
+    if payload.recurrence in month_steps:
+        month_step = month_steps[payload.recurrence]
+        return [
+            monthly_due_date(year, month, payload.due_date.day)
+            for year, month in iter_months(payload.period_start, payload.period_end)[::month_step]
+        ]
     if payload.recurrence == "annually":
         return iter_annual_dates(payload.due_date, payload.period_end)
     return [payload.due_date]
