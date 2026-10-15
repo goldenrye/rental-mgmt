@@ -1403,67 +1403,54 @@ function App() {
                 </div>
                 <p className="muted">{activeBillFilters.length > 0 ? activeBillFilters.join(" | ") : "All property bills"}</p>
                 <p className="muted" aria-live="polite">Showing {visiblePropertyBills.length} of {propertyBills.length} property bills.</p>
-                {visiblePropertyBills.length === 0 ? (
-                  <p className="muted">No property bills match the selected filters.</p>
-                ) : (
-                  <div className="bill-card-list">
-                    {visiblePropertyBills.map((bill) => (
-                      <article className="bill-card" key={bill.id}>
-                        <div className="card-header">
-                          <div>
-                            <p className="eyebrow">{bill.bill_type}</p>
-                            <h3>{bill.title}</h3>
-                            <p className="muted">{propertyNameById.get(bill.property_id) ?? `Property #${bill.property_id}`}</p>
-                          </div>
-                          <span className={`status ${bill.status === "paid" ? "paid" : "open"}`}>{bill.status}</span>
-                        </div>
-                        <div className="lease-details">
-                          <div className="detail-item">
-                            <span>Amount</span>
-                            <strong>${bill.amount_due}</strong>
-                          </div>
-                          <div className="detail-item">
-                            <span>Due Date</span>
-                            <strong>{bill.due_date}</strong>
-                          </div>
-                          <div className="detail-item">
-                            <span>Repeat</span>
-                            <strong>
-                              {bill.recurrence === "semi_annually"
-                                ? "Every six months"
-                                : bill.recurrence === "bi_monthly"
-                                  ? "Every two months"
-                                  : bill.recurrence.replace("_", " ")}
-                            </strong>
-                          </div>
-                          <div className="detail-item">
-                            <span>Tenant Bill</span>
-                            <strong>{bill.generated_at ? "Generated" : "Not generated"}</strong>
-                          </div>
-                        </div>
-                        {bill.notes && <p className="muted">{bill.notes}</p>}
-                        <div className="actions">
+                <DataTable
+                  empty="No property bills match the selected filters."
+                  headers={["Description", "Property", "Category", "Amount Due", "Due Date", "Repeat", "Status", "Tenant Bills", "Notes", "Actions"]}
+                  className="compact-table property-bill-table"
+                >
+                  {visiblePropertyBills.map((bill) => (
+                    <tr key={bill.id}>
+                      <td className="bill-description" title={bill.title}><strong>{bill.title}</strong></td>
+                      <td className="property-name" title={propertyNameById.get(bill.property_id) ?? `Property #${bill.property_id}`}>
+                        {propertyNameById.get(bill.property_id) ?? `Property #${bill.property_id}`}
+                      </td>
+                      <td>{billCategoryLabels[bill.bill_type]}</td>
+                      <td className="numeric">${bill.amount_due}</td>
+                      <td>{bill.due_date}</td>
+                      <td>{billRecurrenceLabels[bill.recurrence]}</td>
+                      <td>
+                        <span className={`status ${bill.status === "paid" ? "paid" : "open"}`}>{bill.status}</span>
+                      </td>
+                      <td>{bill.generated_at ? "Generated" : "Not generated"}</td>
+                      <td className="bill-notes" title={bill.notes || undefined}>{bill.notes || "-"}</td>
+                      <td>
+                        <div className="compact-row-actions">
                           <button
                             disabled={loading}
+                            aria-label={`Edit property bill "${bill.title}"`}
                             onClick={() =>
                               setBillEdit({ id: bill.id, title: bill.title, amount_due: bill.amount_due, due_date: bill.due_date })
                             }
                           >
-                            Edit Bill
+                            Edit
                           </button>
-                          <button onClick={() => updatePropertyBillStatus(bill, bill.status === "paid" ? "unpaid" : "paid")}>
+                          <button disabled={loading} onClick={() => updatePropertyBillStatus(bill, bill.status === "paid" ? "unpaid" : "paid")}>
                             Mark {bill.status === "paid" ? "Unpaid" : "Paid"}
                           </button>
                           <button
                             disabled={loading || Boolean(bill.generated_at)}
+                            aria-label={`Generate tenant bills for "${bill.title}"`}
+                            title={bill.generated_at ? "Tenant bills already generated" : "Generate tenant bills"}
                             onClick={(event) => {
                               tenantChargeTrigger.current = event.currentTarget;
                               setTenantChargeBillId(bill.id);
                             }}
                           >
-                            {bill.generated_at ? "Tenant Charges Generated" : "Generate Tenant Bill"}
+                            Generate
                           </button>
                           <button
+                            disabled={loading}
+                            aria-label={`Delete property bill "${bill.title}"`}
                             onClick={() =>
                               confirmDelete(`property bill "${bill.title}"`) &&
                               withStatus(() => api.deletePropertyBill(bill.id).then(loadLandlordData), "Property bill deleted.")
@@ -1472,10 +1459,10 @@ function App() {
                             Delete
                           </button>
                         </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
+                      </td>
+                    </tr>
+                  ))}
+                </DataTable>
               </section>
 
               {tenantChargeBillId !== null && (

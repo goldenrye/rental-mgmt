@@ -474,6 +474,8 @@ td:first-child {
 }
 
 .rental-table .numeric,
+.property-bill-table .numeric,
+.property-bill-table th:nth-child(4),
 .rental-table th:nth-child(5),
 .rental-table th:nth-child(6),
 .rental-table th:nth-child(7) {
@@ -481,19 +483,28 @@ td:first-child {
   font-variant-numeric: tabular-nums;
 }
 
-.rental-table .bill-description {
+.compact-table .bill-description,
+.property-bill-table .property-name,
+.property-bill-table .bill-notes {
   max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.rental-row-actions {
+.property-bill-table .property-name,
+.property-bill-table .bill-notes {
+  max-width: 160px;
+}
+
+.rental-row-actions,
+.compact-row-actions {
   display: flex;
   flex-wrap: nowrap;
   gap: 6px;
 }
 
-.rental-row-actions button {
+.rental-row-actions button,
+.compact-row-actions button {
   background: #e9eef8;
   color: #1c2b48;
   padding: 6px 10px;
