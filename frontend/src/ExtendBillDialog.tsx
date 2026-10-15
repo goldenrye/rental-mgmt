@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { api } from "./api";
 import type { PropertyBill, PropertyBillExtensionPreview } from "./api";
 import { billRecurrenceLabels } from "./propertyBillFilters";
+import { DataTable } from "./PaginatedEntries";
 
 type Props = {
   bill: PropertyBill;
@@ -106,32 +107,27 @@ export function ExtendBillDialog({ bill, onClose, onGenerated }: Props) {
             {preview.warning && <p role="note" className="muted">{preview.warning}</p>}
             <h3>Existing Future Bills ({preview.existing_future_bills.length})</h3>
             {preview.existing_future_bills.length ? (
-              <div className="table-wrap">
-                <table className="compact-table">
-                  <thead><tr><th>Bill</th><th>Due Date</th><th>Amount Due</th><th>Status</th></tr></thead>
-                  <tbody>{preview.existing_future_bills.map((existing) => (
+              <DataTable label="Existing future bills" empty="No existing future bills." headers={["Bill", "Due Date", "Amount Due", "Status"]} className="compact-table">
+                  {preview.existing_future_bills.map((existing) => (
                     <tr key={existing.id}>
                       <td>#{existing.id} {existing.title}</td><td>{existing.due_date}</td>
                       <td>${existing.amount_due}</td><td>{existing.status}</td>
                     </tr>
-                  ))}</tbody>
-                </table>
-              </div>
+                  ))}
+              </DataTable>
             ) : <p>No existing bills in this series are due today or later.</p>}
             <h3>New Bills to Generate ({preview.new_bills.length})</h3>
             {preview.new_bills.length ? (
-              <div className="table-wrap">
-                <table className="compact-table">
-                  <thead><tr><th>Due Date</th><th>Amount Due</th><th>Status</th></tr></thead>
-                  <tbody>{preview.new_bills.map((proposed) => (
+              <DataTable label="New bills to generate" empty="No new bills." headers={["Due Date", "Amount Due", "Status"]} className="compact-table">
+                  {preview.new_bills.map((proposed) => (
                     <tr key={proposed.due_date}>
                       <td>{proposed.due_date}</td><td>${proposed.amount_due}</td><td>New / unpaid</td>
                     </tr>
-                  ))}</tbody>
-                </table>
-              </div>
+                  ))}
+              </DataTable>
             ) : <p role="status">No new bills are due by this date. Choose a later end date.</p>}
             <p><strong>Total for new bills: ${preview.total_new_amount}</strong></p>
+            <p className="muted">Confirmation generates all {preview.new_bills.length} new bills across all pages.</p>
           </>
         )}
         <div className="modal-actions">

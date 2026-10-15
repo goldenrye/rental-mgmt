@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { api } from "./api";
 import type { Bill, TenantChargePreview } from "./api";
+import { DataTable } from "./PaginatedEntries";
 
 type Props = {
   billId: number;
@@ -85,10 +86,7 @@ export function TenantChargeDialog({ billId, onClose, onGenerated }: Props) {
             {preview.tenants.length === 0 ? (
               <p role="status">No eligible tenants found for this property bill period. Add or update the property's leases first.</p>
             ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th scope="col">Tenant</th><th scope="col">Amount to pay</th><th scope="col">Due date</th></tr></thead>
-                  <tbody>
+              <DataTable label="Tenant charge preview" empty="No eligible tenants." headers={["Tenant", "Amount to pay", "Due date"]}>
                     {preview.tenants.map((tenant) => (
                       <tr key={tenant.tenant_id}>
                         <td>{tenant.tenant_name}</td>
@@ -96,13 +94,11 @@ export function TenantChargeDialog({ billId, onClose, onGenerated }: Props) {
                         <td>{preview.due_date}</td>
                       </tr>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+              </DataTable>
             )}
             <p className="muted">
               Confirm creates one bill per tenant, marked "Tenant charge", due on the last day of the original bill's due-date month.
-              No bills are created until you confirm.
+              No bills are created until you confirm. Confirmation includes all {preview.tenants.length} tenants across all pages.
             </p>
           </>
         )}

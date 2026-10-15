@@ -19,6 +19,7 @@ import { PropertyBillFilterDialog } from "./PropertyBillFilterDialog";
 import { TenantChargeDialog } from "./TenantChargeDialog";
 import { ExtendBillDialog } from "./ExtendBillDialog";
 import { PaymentDialog } from "./PaymentDialog";
+import { DataTable, PaginatedList } from "./PaginatedEntries";
 import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
 import type { PropertyBillFilters } from "./propertyBillFilters";
 import "./styles.css";
@@ -999,7 +1000,7 @@ function App() {
                     Add Property
                   </button>
                 </div>
-                <DataTable empty="No properties yet." headers={["Property", "Address", "Description", "Actions"]}>
+                <DataTable label="Properties" empty="No properties yet." headers={["Property", "Address", "Description", "Actions"]}>
                   {properties.map((property) => {
                     const propertyUnits = units.filter((unit) => unit.property_id === property.id);
                     const expanded = Boolean(expandedPropertyUnits[property.id]);
@@ -1079,6 +1080,7 @@ function App() {
                       <td colSpan={4}>
                         <section className="property-units" aria-label={`Units in ${property.name}`}>
                           <DataTable
+                            label={`Units in ${property.name}`}
                             empty="No units in this property yet. Use Add Unit to create one."
                             headers={["Unit", "Description", "Actions"]}
                             className="compact-table"
@@ -1251,7 +1253,7 @@ function App() {
                     Add Tenant
                   </button>
                 </div>
-                <DataTable empty="No tenants yet." headers={["Tenant ID", "Full Name", "Email", "Phone", "Deposit Paid", "Actions"]} className="compact-table">
+                <DataTable label="Tenants" empty="No tenants yet." headers={["Tenant ID", "Full Name", "Email", "Phone", "Deposit Paid", "Actions"]} className="compact-table">
                   {tenants.map((tenant) => (
                     <tr key={tenant.id}>
                       <td>#{tenant.id}</td>
@@ -1308,7 +1310,7 @@ function App() {
                 {leases.length === 0 ? (
                   <p className="muted">No leases yet.</p>
                 ) : (
-                  <div className="lease-list">
+                  <PaginatedList label="Leases" className="lease-list">
                     {leases.map((lease) => {
                       const expanded = expandedLeaseId === lease.id;
                       return (
@@ -1398,7 +1400,7 @@ function App() {
 
                               <div className="lease-tenants">
                                 <h4>Tenants</h4>
-                                <div className="tenant-summary-list">
+                                <PaginatedList label={`Tenants in lease ${lease.id}`} className="tenant-summary-list">
                                   {lease.tenants.map((tenant) => {
                                     const name = tenantNameById.get(tenant.tenant_id) ?? `Tenant #${tenant.tenant_id}`;
                                     return (
@@ -1409,14 +1411,14 @@ function App() {
                                       </div>
                                     );
                                   })}
-                                </div>
+                                </PaginatedList>
                               </div>
                             </div>
                           )}
                         </article>
                       );
                     })}
-                  </div>
+                  </PaginatedList>
                 )}
               </section>
 
@@ -1618,8 +1620,10 @@ function App() {
                   </button>
                 </div>
                 <p className="muted">{activeBillFilters.length > 0 ? activeBillFilters.join(" | ") : "All property bills"}</p>
-                <p className="muted" aria-live="polite">Showing {visiblePropertyBills.length} of {propertyBills.length} property bills.</p>
+                <p className="muted" aria-live="polite">{visiblePropertyBills.length} of {propertyBills.length} property bills match the filters.</p>
                 <DataTable
+                  key={JSON.stringify(billFilter)}
+                  label="Property bills"
                   empty="No property bills match the selected filters."
                   headers={["Description", "Property", "Category", "Amount Due", "Due Date", "Repeat", "Status", "Tenant Bills", "Notes", "Actions"]}
                   className="compact-table property-bill-table"
@@ -1953,6 +1957,8 @@ function App() {
                     </button>
                   </div>
                   <DataTable
+                    key={selectedPaymentTenantId}
+                    label={`${selectedPaymentTenant.full_name} payment history`}
                     empty="No payment history for this tenant yet."
                     headers={["Payment ID", "Paid At", "Amount Paid", "Billing Month / Bill ID", "Note"]}
                     className="compact-table"
@@ -1977,6 +1983,8 @@ function App() {
                 </section>
               )}
               <DataTable
+                key={String(showHistoricPaidBills)}
+                label="Rental records"
                 empty="No rental records to show. Generate rental after creating an active lease or enable historic paid rental."
                 headers={["Bill ID", "Description", "Tenant", "Billing Month", "Amount Due", "Amount Paid", "Balance", "Status", "Actions"]}
                 className="compact-table rental-table"
@@ -2058,26 +2066,6 @@ function Status({ error, message }: { error: string; message: string }) {
     return null;
   }
   return <div className={error ? "alert error" : "alert success"}>{error || message}</div>;
-}
-
-function DataTable({ children, empty, headers, className }: {
-  children: ReactNode;
-  empty: string;
-  headers?: string[];
-  className?: string;
-}) {
-  const rows = Array.isArray(children) ? children.filter(Boolean) : children;
-  if (Array.isArray(rows) && rows.length === 0) {
-    return <p className="muted">{empty}</p>;
-  }
-  return (
-    <div className="table-wrap">
-      <table className={className}>
-        {headers && <thead><tr>{headers.map((header) => <th scope="col" key={header}>{header}</th>)}</tr></thead>}
-        <tbody>{children}</tbody>
-      </table>
-    </div>
-  );
 }
 
 export default App;

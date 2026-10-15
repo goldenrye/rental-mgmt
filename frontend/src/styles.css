@@ -528,6 +528,50 @@ td:first-child {
   overflow-x: auto;
 }
 
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pagination-summary {
+  color: #526078;
+  font-size: 0.8rem;
+}
+
+.pagination-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pagination-buttons button {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #e9eef8;
+  color: #1c2b48;
+  font-size: 0.8rem;
+}
+
+.pagination-buttons button:hover:not(:disabled) {
+  background: #dbe5f5;
+}
+
+.pagination-buttons button[aria-current="page"] {
+  background: #315fbb;
+  color: #fff;
+}
+
+.pagination-buttons button:focus-visible {
+  outline: 2px solid #315fbb;
+  outline-offset: 2px;
+}
+
 .compact-table {
   width: 100%;
   font-size: 0.85rem;
