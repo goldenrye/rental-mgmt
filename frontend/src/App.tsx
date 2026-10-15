@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   Bill,
@@ -15,6 +15,9 @@ import {
   getStoredToken,
   storeToken,
 } from "./api";
+import { PropertyBillFilterDialog } from "./PropertyBillFilterDialog";
+import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
+import type { PropertyBillFilters } from "./propertyBillFilters";
 import "./styles.css";
 
 type Tab = "properties" | "units" | "tenants" | "leases" | "bills" | "bill";
@@ -150,7 +153,9 @@ function App() {
   const [propertyBills, setPropertyBills] = useState<PropertyBill[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [showHistoricPaidBills, setShowHistoricPaidBills] = useState(false);
-  const [billFilter, setBillFilter] = useState(currentMonthRange);
+  const [billFilter, setBillFilter] = useState<PropertyBillFilters>(() => ({ ...emptyPropertyBillFilters, ...currentMonthRange() }));
+  const [billFilterOpen, setBillFilterOpen] = useState(false);
+  const billFilterButtonRef = useRef<HTMLButtonElement>(null);
   const [propertyForm, setPropertyForm] = useState<PropertyForm>(emptyProperty);
   const [unitForm, setUnitForm] = useState<UnitForm>(emptyUnit);
   const [tenantForm, setTenantForm] = useState<TenantForm>(emptyTenant);
@@ -227,12 +232,25 @@ function App() {
     [payments, selectedPaymentTenantId],
   );
   const visiblePropertyBills = useMemo(
-    () =>
-      propertyBills.filter(
-        (bill) => (!billFilter.start || bill.due_date >= billFilter.start) && (!billFilter.end || bill.due_date <= billFilter.end),
-      ),
-    [billFilter.end, billFilter.start, propertyBills],
+    () => filterPropertyBills(propertyBills, billFilter),
+    [billFilter, propertyBills],
   );
+  const activeBillFilters = [
+    billFilter.start && `Due from: ${billFilter.start}`,
+    billFilter.end && `Due through: ${billFilter.end}`,
+    billFilter.due_date && `Due on: ${billFilter.due_date}`,
+    billFilter.bill_type && `Category: ${billCategoryLabels[billFilter.bill_type]}`,
+    billFilter.property_id && `Property: ${propertyNameById.get(Number(billFilter.property_id)) ?? `#${billFilter.property_id}`}`,
+    billFilter.status && `Status: ${billFilter.status}`,
+    billFilter.recurrence && `Repeat: ${billRecurrenceLabels[billFilter.recurrence]}`,
+    billFilter.tenant_bills && `Tenant bills: ${billFilter.tenant_bills === "generated" ? "Generated" : "Not generated"}`,
+  ].filter(Boolean);
+
+  function closeBillFilters() {
+    setBillFilterOpen(false);
+    billFilterButtonRef.current?.focus();
+  }
+
   useEffect(() => {
     if (!getStoredToken()) {
       return;
@@ -365,6 +383,8 @@ function App() {
     setBillModalOpen(false);
     setProfileModalOpen(false);
     setBillEdit(null);
+    setBillFilterOpen(false);
+    setBillFilter({ ...emptyPropertyBillFilters, ...currentMonthRange() });
     setProfileMenuOpen(false);
     setTenantDropdownOpen(false);
     setMessage("Signed out.");
@@ -574,7 +594,7 @@ function App() {
       const updatedBill = await api.updatePropertyBill(id, { amount_due, due_date });
       setPropertyBills((current) => current.map((bill) => (bill.id === id ? updatedBill : bill)));
       setBillEdit(null);
-    }, "Bill updated. Bills outside the selected date range are hidden.");
+    }, "Bill updated. Bills that do not match the active filters are hidden.");
   }
 
   async function generateTenantBills(propertyBillId: number) {
@@ -1349,28 +1369,29 @@ function App() {
                   </div>
                 </div>
                 <div className="filter-bar">
-                  <label>
-                    From
-                    <input
-                      type="date"
-                      value={billFilter.start}
-                      onChange={(event) => setBillFilter((current) => ({ ...current, start: event.target.value }))}
-                    />
-                  </label>
-                  <label>
-                    To
-                    <input
-                      type="date"
-                      value={billFilter.end}
-                      onChange={(event) => setBillFilter((current) => ({ ...current, end: event.target.value }))}
-                    />
-                  </label>
-                  <button className="secondary" onClick={() => setBillFilter(currentMonthRange())}>
+                  <button
+                    ref={billFilterButtonRef}
+                    className="secondary"
+                    aria-haspopup="dialog"
+                    onClick={() => setBillFilterOpen(true)}
+                  >
+                    Filter Bills{activeBillFilters.length > 0 ? ` (${activeBillFilters.length})` : ""}
+                  </button>
+                  <button className="secondary" onClick={() => setBillFilter({ ...emptyPropertyBillFilters, ...currentMonthRange() })}>
                     Current Month
                   </button>
+                  <button
+                    className="secondary"
+                    disabled={activeBillFilters.length === 0}
+                    onClick={() => setBillFilter({ ...emptyPropertyBillFilters })}
+                  >
+                    Clear Filters
+                  </button>
                 </div>
+                <p className="muted">{activeBillFilters.length > 0 ? activeBillFilters.join(" | ") : "All property bills"}</p>
+                <p className="muted" aria-live="polite">Showing {visiblePropertyBills.length} of {propertyBills.length} property bills.</p>
                 {visiblePropertyBills.length === 0 ? (
-                  <p className="muted">No property bills in the selected period.</p>
+                  <p className="muted">No property bills match the selected filters.</p>
                 ) : (
                   <div className="bill-card-list">
                     {visiblePropertyBills.map((bill) => (
@@ -1435,6 +1456,18 @@ function App() {
                   </div>
                 )}
               </section>
+
+              {billFilterOpen && (
+                <PropertyBillFilterDialog
+                  filters={billFilter}
+                  properties={properties}
+                  onApply={(filters) => {
+                    setBillFilter(filters);
+                    closeBillFilters();
+                  }}
+                  onClose={closeBillFilters}
+                />
+              )}
 
               {billEdit && (
                 <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bill-edit-title">
