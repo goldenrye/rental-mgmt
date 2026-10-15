@@ -1,5 +1,6 @@
 """Shared account status and session checks for API and MCP authentication."""
 
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
@@ -8,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import LoginSession, User, UserAccess, UserRole
-from app.security import create_access_token, decode_access_token, hash_password
+from app.security import create_access_token, decode_access_token, hash_password, verify_password
+
+MIN_INITIAL_ADMIN_PASSWORD_LENGTH = 12
 
 
 def utc(value: datetime) -> datetime:
@@ -30,17 +33,39 @@ def ensure_access(db: Session, user: User) -> UserAccess:
     return state
 
 
+def initial_admin_password() -> str:
+    """Return the configured initial admin password, or a random one if it is weak or unset."""
+    configured = get_settings().super_admin_initial_password
+    if configured != "admin" and len(configured) >= MIN_INITIAL_ADMIN_PASSWORD_LENGTH:
+        return configured
+    generated = secrets.token_urlsafe(18)
+    print(
+        "SUPER_ADMIN_INITIAL_PASSWORD is unset or weak (minimum "
+        f"{MIN_INITIAL_ADMIN_PASSWORD_LENGTH} characters, not 'admin'). Generated a one-time "
+        f"initial password for the 'admin' account: {generated}\n"
+        "Sign in as admin with it now; you must change it on first login.",
+        flush=True,
+    )
+    return generated
+
+
 def bootstrap_super_admin(db: Session) -> None:
     existing = db.scalar(select(User).where(User.email == "admin"))
     if existing:
         if existing.role != UserRole.super_admin.value:
             raise RuntimeError("The reserved admin username belongs to a non-admin account.")
+        state = db.get(UserAccess, existing.id)
+        # Older releases created the admin with the guessable password "admin". Replace it if never changed.
+        if state and state.password_change_required and verify_password("admin", existing.hashed_password):
+            existing.hashed_password = hash_password(initial_admin_password())
+            revoke_all_sessions(db, existing)
+            db.commit()
         return
     try:
         with db.begin_nested():
             admin = User(
                 email="admin", full_name="Super Admin", role=UserRole.super_admin.value,
-                hashed_password=hash_password(get_settings().super_admin_initial_password),
+                hashed_password=hash_password(initial_admin_password()),
             )
             db.add(admin)
             db.flush()

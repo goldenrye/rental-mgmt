@@ -41,3 +41,23 @@ services:
   db:
     # Postgres is reachable only from the other containers
     ports: !reset []
+
+  backup:
+    image: postgres:16-alpine
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup_db.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: rental
+      PGPASSWORD: rental
+      PGDATABASE: rental_mgmt
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      # Off-instance copy; local dumps alone do not survive losing the EC2 instance or its volume
+      BACKUP_S3_URI: ${BACKUP_S3_URI:-}
+    volumes:
+      - ./scripts/backup_db.sh:/usr/local/bin/backup_db.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy

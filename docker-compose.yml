@@ -20,7 +20,7 @@ services:
       - "8000:8000"
     environment:
       <<: *backend-env
-      SUPER_ADMIN_INITIAL_PASSWORD: ${SUPER_ADMIN_INITIAL_PASSWORD:-admin}
+      SUPER_ADMIN_INITIAL_PASSWORD: ${SUPER_ADMIN_INITIAL_PASSWORD:-}
     restart: unless-stopped
     depends_on:
       db:

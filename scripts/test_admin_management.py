@@ -25,7 +25,7 @@ class AdminManagementTests(unittest.TestCase):
     def setUp(self):
         self.addCleanup(patch.stopall)
         patch.object(get_settings(), "jwt_secret_key", "test-only-admin-secret-0123456789abcdef").start()
-        patch.object(get_settings(), "super_admin_initial_password", "admin").start()
+        patch.object(get_settings(), "super_admin_initial_password", "initial-admin-password").start()
         self.engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         self.addCleanup(self.engine.dispose)
         Base.metadata.create_all(self.engine)
@@ -54,7 +54,7 @@ class AdminManagementTests(unittest.TestCase):
         self.addCleanup(app.dependency_overrides.clear)
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
-        self.initial_token = self.login("admin", "admin")
+        self.initial_token = self.login("admin", "initial-admin-password")
 
     def login(self, name, password):
         response = self.client.post("/auth/login", json={"email": name, "password": password})
@@ -67,7 +67,7 @@ class AdminManagementTests(unittest.TestCase):
 
     def unlock_admin(self):
         response = self.client.post("/me/password", headers=self.headers(self.initial_token), json={
-            "current_password": "admin", "new_password": "secure-admin-password",
+            "current_password": "initial-admin-password", "new_password": "secure-admin-password",
         })
         self.assertEqual(response.status_code, 204, response.text)
         self.admin_token = self.login("admin", "secure-admin-password")
@@ -86,7 +86,7 @@ class AdminManagementTests(unittest.TestCase):
             self.assertEqual(db.scalar(select(func.count()).select_from(User).where(User.email == "admin")), 1)
             self.assertTrue(verify_password("secure-admin-password", db.get(User, self.admin_id).hashed_password))
         self.assertEqual(self.client.get("/me", headers=self.headers(self.initial_token)).status_code, 401)
-        self.assertEqual(self.client.post("/auth/login", json={"email": "admin", "password": "admin"}).status_code, 401)
+        self.assertEqual(self.client.post("/auth/login", json={"email": "admin", "password": "initial-admin-password"}).status_code, 401)
 
     def test_admin_only_has_landlord_management_access(self):
         headers = self.unlock_admin()

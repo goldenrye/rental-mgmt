@@ -71,6 +71,17 @@ class LoginSession(Base):
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
+class LoginThrottle(Base):
+    """Failed password attempts per login name, including names with no account."""
+
+    __tablename__ = "login_throttles"
+
+    login_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    failures: Mapped[int] = mapped_column(nullable=False, default=0)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
 class AdminAuditEvent(Base):
     __tablename__ = "admin_audit_events"
 

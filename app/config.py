@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24
-    super_admin_initial_password: str = "admin"
+    super_admin_initial_password: str = ""
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     @property

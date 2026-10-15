@@ -61,6 +61,7 @@ from app.schemas import (
 from app.security import decode_access_token, hash_password, verify_password
 from app.account_access import bootstrap_super_admin, ensure_access, issue_login, revoke_all_sessions, revoke_session
 from app.admin import router as admin_router
+from app.login_throttle import authenticate
 from app.tenant_charges import preview_tenant_charges
 from app.bill_extensions import confirm_extension, preview_extension, track_created_series
 from app.schemas import ConfirmPropertyBillExtension, ExtendPropertyBillRequest, PropertyBillExtensionPreview
@@ -443,8 +444,8 @@ def register(payload: UserCreate, db: DbSession) -> User:
 
 @app.post("/auth/login", response_model=Token)
 def login(payload: LoginRequest, db: DbSession) -> Token:
-    user = db.scalar(select(User).where(User.email == payload.email))
-    if user is None or not verify_password(payload.password, user.hashed_password):
+    user = authenticate(db, str(payload.email), payload.password)
+    if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     try:
         return Token(access_token=issue_login(db, user, "web"))
@@ -457,8 +458,8 @@ def oauth_token(
     db: DbSession,
     form: OAuth2PasswordRequestForm = Depends(),
 ) -> Token:
-    user = db.scalar(select(User).where(User.email == form.username))
-    if user is None or not verify_password(form.password, user.hashed_password):
+    user = authenticate(db, form.username, form.password)
+    if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
     if user.role != UserRole.landlord.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Landlord access is required")
@@ -621,25 +622,7 @@ def delete_unit(unit_id: int, db: DbSession, landlord: Landlord) -> Response:
 
 @app.post("/tenants", response_model=TenantRead, status_code=status.HTTP_201_CREATED)
 def create_tenant(payload: TenantCreate, db: DbSession, landlord: Landlord) -> TenantProfile:
-    if payload.user_id is not None:
-        user = db.get(User, payload.user_id)
-        if user is None or user.role != UserRole.tenant.value:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id must reference a tenant user")
-        existing_profile = db.scalar(select(TenantProfile).where(TenantProfile.user_id == payload.user_id))
-        if existing_profile and existing_profile.landlord_id is not None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant user is already managed")
-        if existing_profile:
-            existing_profile.landlord_id = landlord.id
-            existing_profile.full_name = payload.full_name
-            existing_profile.email = str(payload.email) if payload.email else existing_profile.email
-            existing_profile.phone = payload.phone
-            existing_profile.notes = payload.notes
-            db.commit()
-            db.refresh(existing_profile)
-            return existing_profile
-
     tenant = TenantProfile(
-        user_id=payload.user_id,
         landlord_id=landlord.id,
         full_name=payload.full_name,
         email=str(payload.email) if payload.email else None,

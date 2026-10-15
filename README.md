@@ -77,16 +77,23 @@ python scripts/db_status.py
 
 ## Super Admin
 
-API startup creates a single super-admin account with username **admin** and initial
-password **admin**. Use the normal login page's **Email or admin username** field.
-The first login requires a different password of at least eight characters before
-landlord management is available. Restarting does not reset the admin password.
-Public registration cannot create super admins.
+API startup creates a single super-admin account with username **admin**. Its initial
+password is `SUPER_ADMIN_INITIAL_PASSWORD` when that is at least 12 characters and not
+`admin`. Otherwise, startup generates a random initial password and prints it once to
+the API log (`docker compose logs api | grep "'admin' account"`). Use the normal login
+page's **Email or admin username** field. The first login requires a different
+password of at least eight characters before landlord management is available.
+Restarting does not reset the admin password. Public registration cannot create
+super admins.
 
-Before exposing a new deployment to the internet, set
-`SUPER_ADMIN_INITIAL_PASSWORD` to a private random password, or complete the initial
-password change while the API is accessible only locally. This setting is used
-only when creating the account; it does not overwrite an existing admin password.
+The setting is used only when creating the account and never overwrites a password
+the admin has changed. One exception protects older deployments: if the admin
+account still has the old default password `admin` and has never changed it,
+startup replaces it with the configured or generated initial password and revokes
+its sessions.
+
+Sign in as admin and change the initial password right after the first deployment.
+Until you do, anyone who can read the API logs can sign in as admin.
 
 The dedicated admin dashboard only manages landlord accounts. It lists active or
 deactivated status, last login, last activity, and active session counts, with
@@ -119,6 +126,21 @@ Management endpoints (super admin only, after initial password change):
 - `POST /admin/landlords/{user_id}/password` with `{"new_password": "..."}`
 
 `POST /auth/logout` revokes the current authenticated session.
+
+### Sign-in throttling
+
+After 5 failed password attempts within 15 minutes, a login name is locked for
+15 minutes. Locked attempts return HTTP 429 with `Retry-After`, even when the
+password is correct. Failures are counted per lowercased login name on both `/auth/login` and
+`/oauth/token`, including names with no account, so lockouts do not reveal
+which emails are registered. A successful sign-in clears the count. A side effect
+is that someone who knows a landlord's email can lock that landlord out for
+15 minutes at a time. The nginx frontend also limits `/api/auth/login`,
+`/api/auth/register`, and `/api/oauth/token` to 10 requests per minute per client IP
+(burst 5).
+
+Landlords create tenant records with `POST /tenants`. That endpoint does not accept
+`user_id`, so landlords cannot link or claim existing tenant user accounts.
 
 ## Run MCP Server For AI Agents
 
@@ -271,6 +293,35 @@ The production file publishes only port 443 for the frontend and 8001 for MCP. T
 
 nginx reads the certificate at startup, so after a renewal run `docker compose restart frontend mcp`.
 
+### Database backups
+
+`docker-compose.prod.yml` adds a `backup` service. It runs `pg_dump` at startup and
+then every `BACKUP_INTERVAL_SECONDS` (default 86400, one day). Dumps go to
+`BACKUP_DIR` (default `./backups`), and dumps older than `BACKUP_RETENTION_DAYS`
+(default 14) are deleted.
+
+Local dumps are on the same disk as the database, so they do not survive losing the
+EC2 instance or its EBS volume. Set `BACKUP_S3_URI` (for example
+`s3://my-bucket/rental-mgmt`) to copy each dump to S3. The container uses the EC2
+instance role, which needs `s3:PutObject` on that prefix. Containers can reach the
+role only if the instance metadata hop limit is at least 2:
+
+```bash
+aws ec2 modify-instance-metadata-options --instance-id <id> --http-put-response-hop-limit 2 --http-tokens required
+```
+
+Also turn on EBS encryption, and add a Data Lifecycle Manager snapshot policy for
+the volume. Use an S3 lifecycle rule to expire old dumps.
+
+To restore a dump (this replaces the current data):
+
+```bash
+docker compose exec -T db pg_restore -U rental -d rental_mgmt --clean --if-exists < backups/rental_mgmt-<timestamp>.dump
+docker compose restart api mcp
+```
+
+Test a restore before you rely on the backups.
+
 ### Compose configuration
 
 `api` and `mcp` share their database and JWT settings through the `x-backend-env` anchor at the top of `docker-compose.yml`, so both services always use the same `DATABASE_URL` and `JWT_SECRET_KEY`. They must match, because the MCP server validates tokens issued by the API.
@@ -316,7 +367,7 @@ Required environment variables:
 - `JWT_SECRET_KEY`: long random secret for signing tokens
 - `JWT_ALGORITHM`: defaults to `HS256`
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: defaults to `1440`
-- `SUPER_ADMIN_INITIAL_PASSWORD`: initial admin password; defaults to `admin`. Set privately before first public deployment.
+- `SUPER_ADMIN_INITIAL_PASSWORD`: initial admin password, at least 12 characters. If unset or weak, a random one is generated and printed once to the API log.
 - `CORS_ORIGINS`: comma-separated browser origins allowed to call the API
 
 Frontend build environment variables:

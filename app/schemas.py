@@ -139,7 +139,9 @@ class TenantBase(BaseModel):
 
 
 class TenantCreate(TenantBase):
-    user_id: Optional[int] = None
+    # Linking to an existing user account by ID is not accepted: it would let any landlord
+    # claim another person's tenant account and read its email.
+    model_config = ConfigDict(extra="forbid")
 
 
 class TenantUpdate(BaseModel):
