@@ -19,13 +19,15 @@ import { PropertyBillFilterDialog } from "./PropertyBillFilterDialog";
 import { TenantChargeDialog } from "./TenantChargeDialog";
 import { ExtendBillDialog } from "./ExtendBillDialog";
 import { PaymentDialog } from "./PaymentDialog";
-import { DataTable, PaginatedList } from "./PaginatedEntries";
+import { DataTable } from "./PaginatedEntries";
+import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
 import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
 import type { PropertyBillFilters } from "./propertyBillFilters";
 import "./styles.css";
 
-function BillActionIcon({ name }: { name: "edit" | "paid" | "unpaid" | "extend" | "generate" | "delete" }) {
+function BillActionIcon({ name }: { name: "details" | "edit" | "paid" | "unpaid" | "extend" | "generate" | "delete" }) {
   const paths: Record<typeof name, ReactNode> = {
+    details: <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>,
     edit: <><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m14 5 5 5" /></>,
     paid: <><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></>,
     unpaid: <><path d="M3 4v6h6" /><path d="M3 10a9 9 0 1 1 2 8" /></>,
@@ -199,7 +201,8 @@ function App() {
   const tenantChargeTrigger = useRef<HTMLButtonElement | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [expandedLeaseId, setExpandedLeaseId] = useState<number | null>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [leaseDetailsId, setLeaseDetailsId] = useState<number | null>(null);
   const [expandedPropertyUnits, setExpandedPropertyUnits] = useState<Record<number, boolean>>({});
   const [selectedPaymentTenantId, setSelectedPaymentTenantId] = useState<number | null>(null);
   const [selectedPaymentBillId, setSelectedPaymentBillId] = useState<number | null>(null);
@@ -208,6 +211,17 @@ function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (event.target instanceof Node && !profileMenuRef.current?.contains(event.target)) {
+        setProfileMenuOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+  }, [profileMenuOpen]);
 
   useEffect(() => {
     if (!propertyModalOpen) return;
@@ -253,6 +267,7 @@ function App() {
     [leaseForm.property_id, units],
   );
   const tenantNameById = useMemo(() => new Map(tenants.map((tenant) => [tenant.id, tenant.full_name])), [tenants]);
+  const leaseDetails = leases.find((lease) => lease.id === leaseDetailsId);
   const tenantDepositPaidById = useMemo(() => {
     const depositByTenant = new Map<number, number>();
     leases.forEach((lease) => {
@@ -443,7 +458,7 @@ function App() {
     setManualBillForm(emptyManualBill);
     setSelectedPaymentTenantId(null);
     setSelectedPaymentBillId(null);
-    setExpandedLeaseId(null);
+    setLeaseDetailsId(null);
     setExpandedPropertyUnits({});
     setLeaseModalOpen(false);
     setBillModalOpen(false);
@@ -786,26 +801,31 @@ function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
+        <div className="header-greeting">
           <p className="eyebrow">Rental Management</p>
           <h1>Welcome, {profileDisplayName}</h1>
           <p className="muted">{user.role === "landlord" ? "Landlord dashboard" : "Tenant account"}</p>
         </div>
-        <div className="profile-menu">
+        <div className="profile-menu" ref={profileMenuRef}>
           <button
+            type="button"
             className="profile-trigger"
             aria-label="Open profile menu"
             aria-expanded={profileMenuOpen}
+            aria-controls={profileMenuOpen ? "profile-panel" : undefined}
+            title="Profile"
             onClick={() => setProfileMenuOpen((isOpen) => !isOpen)}
           >
             <span className="profile-icon" aria-hidden="true">
-              {profileInitial}
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
+              </svg>
             </span>
-            <span className="profile-trigger-text">Profile</span>
           </button>
 
           {profileMenuOpen && (
-            <section className="profile-panel card">
+            <section id="profile-panel" className="profile-panel card">
               <div className="profile-panel-header">
                 <span className="profile-icon large" aria-hidden="true">
                   {profileInitial}
@@ -1297,130 +1317,76 @@ function App() {
 
           {activeTab === "leases" && (
             <>
-              <section className="card">
-                <div className="card-header">
-                  <div>
+              <section className="card leases-section">
+                <div className="card-header leases-header">
+                  <div className="leases-heading">
                     <h2>Leases</h2>
-                    <p className="muted">Review lease summaries. Click a lease card to show or hide details.</p>
+                    <span className="muted">{leases.length} leases</span>
                   </div>
                   <button className="primary" onClick={openAddLeaseModal}>
                     Add Lease
                   </button>
                 </div>
-                {leases.length === 0 ? (
-                  <p className="muted">No leases yet.</p>
-                ) : (
-                  <PaginatedList label="Leases" className="lease-list">
-                    {leases.map((lease) => {
-                      const expanded = expandedLeaseId === lease.id;
-                      return (
-                        <article
-                          className={`lease-card ${expanded ? "expanded" : ""}`}
-                          key={lease.id}
-                          onClick={() => setExpandedLeaseId(expanded ? null : lease.id)}
-                        >
-                          <div className="lease-card-header">
-                            <div>
-                              <p className="eyebrow">Lease #{lease.id}</p>
-                              <h3>{propertyNameById.get(lease.property_id) ?? `Property #${lease.property_id}`}</h3>
-                              <p className="muted">
-                                {lease.unit_id ? (unitNameById.get(lease.unit_id) ?? `Unit #${lease.unit_id}`) : "Whole property"}
-                              </p>
-                            </div>
-                            <div className="actions lease-actions">
-                              <button
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openEditLeaseModal(lease);
-                                }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  if (confirmDelete(`lease #${lease.id}`)) {
-                                    void withStatus(() => api.deleteLease(lease.id).then(loadLandlordData), "Lease deleted.");
-                                  }
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="lease-summary">
-                            <div>
-                              <span>Period</span>
-                              <strong>
-                                {lease.start_date} to {lease.end_date}
-                              </strong>
-                            </div>
-                            <div>
-                              <span>Monthly Rent</span>
-                              <strong>${lease.monthly_rent}</strong>
-                            </div>
-                            <div>
-                              <span>Tenants</span>
-                              <strong>{lease.tenants.length}</strong>
-                            </div>
+                <DataTable
+                  label="Leases"
+                  empty="No leases yet."
+                  headers={["Lease ID", "Property", "Unit", "Start Date", "End Date", "Monthly Rent", "Tenants", "Notes", "Actions"]}
+                  className="compact-table lease-table"
+                >
+                  {leases.map((lease) => {
+                    const propertyName = propertyNameById.get(lease.property_id) ?? `Property #${lease.property_id}`;
+                    const unitName = lease.unit_id ? (unitNameById.get(lease.unit_id) ?? `Unit #${lease.unit_id}`) : "Whole property";
+                    const tenantNames = lease.tenants.map((tenant) => tenantNameById.get(tenant.tenant_id) ?? `Tenant #${tenant.tenant_id}`).join(", ");
+                    return (
+                      <tr key={lease.id}>
+                        <td>#{lease.id}</td>
+                        <td className="lease-text" title={propertyName}><strong>{propertyName}</strong></td>
+                        <td className="lease-text" title={unitName}>{unitName}</td>
+                        <td>{lease.start_date}</td>
+                        <td>{lease.end_date}</td>
+                        <td className="numeric">${lease.monthly_rent}</td>
+                        <td className="lease-text" title={tenantNames || "No tenants"}>{lease.tenants.length}{tenantNames ? `: ${tenantNames}` : ""}</td>
+                        <td className="lease-text" title={lease.notes || undefined}>{lease.notes || "-"}</td>
+                        <td>
+                          <div className="compact-row-actions">
+                            <button type="button" className="bill-icon-button" title="View lease details" aria-label={`View details for lease #${lease.id}`} aria-haspopup="dialog" onClick={() => setLeaseDetailsId(lease.id)}>
+                              <BillActionIcon name="details" />
+                            </button>
+                            <button type="button" className="bill-icon-button" disabled={loading} title="Edit lease" aria-label={`Edit lease #${lease.id}`} aria-haspopup="dialog" onClick={() => openEditLeaseModal(lease)}>
+                              <BillActionIcon name="edit" />
+                            </button>
                             <button
-                              className="link-button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setExpandedLeaseId(expanded ? null : lease.id);
+                              type="button"
+                              className="bill-icon-button bill-icon-delete"
+                              disabled={loading}
+                              title="Delete lease"
+                              aria-label={`Delete lease #${lease.id}`}
+                              onClick={() => {
+                                if (confirmDelete(`lease #${lease.id}`)) {
+                                  void withStatus(() => api.deleteLease(lease.id).then(loadLandlordData), "Lease deleted.");
+                                }
                               }}
                             >
-                              {expanded ? "Hide details" : "View details"}
+                              <BillActionIcon name="delete" />
                             </button>
                           </div>
-
-                          {expanded && (
-                            <div className="lease-expanded">
-                              <div className="lease-details">
-                                <div className="detail-item">
-                                  <span>Property</span>
-                                  <strong>{propertyNameById.get(lease.property_id) ?? `Property #${lease.property_id}`}</strong>
-                                </div>
-                                <div className="detail-item">
-                                  <span>Unit</span>
-                                  <strong>{lease.unit_id ? (unitNameById.get(lease.unit_id) ?? `Unit #${lease.unit_id}`) : "Whole property"}</strong>
-                                </div>
-                                <div className="detail-item">
-                                  <span>Lease Period</span>
-                                  <strong>
-                                    {lease.start_date} to {lease.end_date}
-                                  </strong>
-                                </div>
-                                <div className="detail-item">
-                                  <span>Notes</span>
-                                  <strong>{lease.notes || "-"}</strong>
-                                </div>
-                              </div>
-
-                              <div className="lease-tenants">
-                                <h4>Tenants</h4>
-                                <PaginatedList label={`Tenants in lease ${lease.id}`} className="tenant-summary-list">
-                                  {lease.tenants.map((tenant) => {
-                                    const name = tenantNameById.get(tenant.tenant_id) ?? `Tenant #${tenant.tenant_id}`;
-                                    return (
-                                      <div className="tenant-summary" key={tenant.tenant_id}>
-                                        <strong>{name}</strong>
-                                        <span>Rent share: ${tenant.monthly_rent}</span>
-                                        <span>Deposit: ${tenant.deposit}</span>
-                                      </div>
-                                    );
-                                  })}
-                                </PaginatedList>
-                              </div>
-                            </div>
-                          )}
-                        </article>
-                      );
-                    })}
-                  </PaginatedList>
-                )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </DataTable>
               </section>
+
+              {leaseDetails && (
+                <LeaseDetailsDialog
+                  key={leaseDetails.id}
+                  lease={leaseDetails}
+                  propertyName={propertyNameById.get(leaseDetails.property_id) ?? `Property #${leaseDetails.property_id}`}
+                  unitName={leaseDetails.unit_id ? (unitNameById.get(leaseDetails.unit_id) ?? `Unit #${leaseDetails.unit_id}`) : "Whole property"}
+                  tenantNames={tenantNameById}
+                  onClose={() => setLeaseDetailsId(null)}
+                />
+              )}
 
               {leaseModalOpen && (
                 <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="lease-modal-title">
@@ -1587,11 +1553,13 @@ function App() {
 
           {activeTab === "bill" && (
             <>
-              <section className="card">
-                <div className="card-header">
-                  <div>
+              <section className="card property-bills-section">
+                <div className="card-header property-bills-header">
+                  <div className="property-bills-heading">
                     <h2>Property Bills</h2>
-                    <p className="muted">Track landlord property expenses and generate tenant-payable bills when needed.</p>
+                    <span className="bill-result-count" role="status">
+                      {visiblePropertyBills.length} of {propertyBills.length} bills
+                    </span>
                   </div>
                   <div className="header-actions">
                     <button className="primary" onClick={openBillModal}>
@@ -1599,14 +1567,18 @@ function App() {
                     </button>
                   </div>
                 </div>
-                <div className="filter-bar">
+                <div className="property-bills-toolbar" role="group" aria-label="Property bill filters">
                   <button
                     ref={billFilterButtonRef}
-                    className="secondary"
+                    className="secondary bill-filter-trigger"
                     aria-haspopup="dialog"
+                    title="Edit property bill filters"
                     onClick={() => setBillFilterOpen(true)}
                   >
-                    Filter Bills{activeBillFilters.length > 0 ? ` (${activeBillFilters.length})` : ""}
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                      <path d="M3 4h18l-7 8v7l-4 2v-9Z" />
+                    </svg>
+                    Filters{activeBillFilters.length > 0 ? ` (${activeBillFilters.length})` : ""}
                   </button>
                   <button className="secondary" onClick={() => setBillFilter({ ...emptyPropertyBillFilters, ...currentMonthRange() })}>
                     Current Month
@@ -1614,13 +1586,18 @@ function App() {
                   <button
                     className="secondary"
                     disabled={activeBillFilters.length === 0}
+                    aria-label="Clear bill filters"
                     onClick={() => setBillFilter({ ...emptyPropertyBillFilters })}
                   >
-                    Clear Filters
+                    Clear
                   </button>
+                  <span
+                    className="bill-filter-summary"
+                    title={activeBillFilters.length > 0 ? activeBillFilters.join(" | ") : "All property bills"}
+                  >
+                    {activeBillFilters.length > 0 ? activeBillFilters.join(" | ") : "All property bills"}
+                  </span>
                 </div>
-                <p className="muted">{activeBillFilters.length > 0 ? activeBillFilters.join(" | ") : "All property bills"}</p>
-                <p className="muted" aria-live="polite">{visiblePropertyBills.length} of {propertyBills.length} property bills match the filters.</p>
                 <DataTable
                   key={JSON.stringify(billFilter)}
                   label="Property bills"
