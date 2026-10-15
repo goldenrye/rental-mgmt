@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   Bill,
@@ -22,10 +22,9 @@ import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, fil
 import type { PropertyBillFilters } from "./propertyBillFilters";
 import "./styles.css";
 
-type Tab = "properties" | "units" | "tenants" | "leases" | "bills" | "bill";
+type Tab = "properties" | "tenants" | "leases" | "bills" | "bill";
 const tabLabels: Record<Tab, string> = {
-  properties: "properties",
-  units: "units",
+  properties: "Properties & Units",
   tenants: "tenants",
   leases: "leases",
   bills: "rental",
@@ -165,7 +164,11 @@ function App() {
   const [manualBillForm, setManualBillForm] = useState<ManualBillForm>(emptyManualBill);
   const [profileForm, setProfileForm] = useState<ProfileForm>(emptyProfileForm);
   const [editingPropertyId, setEditingPropertyId] = useState<number | null>(null);
+  const [propertyModalOpen, setPropertyModalOpen] = useState(false);
+  const propertyDialogRef = useRef<HTMLDialogElement>(null);
   const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
+  const [unitModalOpen, setUnitModalOpen] = useState(false);
+  const unitDialogRef = useRef<HTMLDialogElement>(null);
   const [editingTenantId, setEditingTenantId] = useState<number | null>(null);
   const [editingLeaseId, setEditingLeaseId] = useState<number | null>(null);
   const [leaseModalOpen, setLeaseModalOpen] = useState(false);
@@ -176,6 +179,7 @@ function App() {
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [expandedLeaseId, setExpandedLeaseId] = useState<number | null>(null);
+  const [expandedPropertyUnits, setExpandedPropertyUnits] = useState<Record<number, boolean>>({});
   const [selectedPaymentTenantId, setSelectedPaymentTenantId] = useState<number | null>(null);
   const [selectedPaymentBillId, setSelectedPaymentBillId] = useState<number | null>(null);
   const [tenantDropdownOpen, setTenantDropdownOpen] = useState(false);
@@ -183,6 +187,29 @@ function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!propertyModalOpen) return;
+    const dialog = propertyDialogRef.current;
+    const trigger = document.activeElement;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+    };
+  }, [propertyModalOpen]);
+
+  useEffect(() => {
+    if (!unitModalOpen) return;
+    const dialog = unitDialogRef.current;
+    const trigger = document.activeElement;
+    dialog?.showModal();
+    dialog?.querySelector<HTMLInputElement>("input:not([readonly])")?.focus();
+    return () => {
+      dialog?.close();
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+    };
+  }, [unitModalOpen]);
 
   const propertyNameById = useMemo(
     () => new Map(properties.map((property) => [property.id, property.name])),
@@ -385,8 +412,11 @@ function App() {
     setSelectedPaymentTenantId(null);
     setSelectedPaymentBillId(null);
     setExpandedLeaseId(null);
+    setExpandedPropertyUnits({});
     setLeaseModalOpen(false);
     setBillModalOpen(false);
+    setPropertyModalOpen(false);
+    setUnitModalOpen(false);
     setProfileModalOpen(false);
     setBillEdit(null);
     setTenantChargeBillId(null);
@@ -452,6 +482,7 @@ function App() {
 
   async function submitProperty(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (loading) return;
     await withStatus(async () => {
       if (editingPropertyId) {
         await api.updateProperty(editingPropertyId, propertyForm);
@@ -460,12 +491,14 @@ function App() {
       }
       setPropertyForm(emptyProperty);
       setEditingPropertyId(null);
+      setPropertyModalOpen(false);
       await loadLandlordData();
     }, editingPropertyId ? "Property updated." : "Property added.");
   }
 
   async function submitUnit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (loading) return;
     await withStatus(async () => {
       const payload = {
         name: unitForm.name,
@@ -478,6 +511,7 @@ function App() {
       }
       setUnitForm(emptyUnit);
       setEditingUnitId(null);
+      setUnitModalOpen(false);
       await loadLandlordData();
     }, editingUnitId ? "Unit updated." : "Unit added.");
   }
@@ -853,7 +887,7 @@ function App() {
       ) : (
         <>
           <nav className="tabs">
-            {(["properties", "units", "tenants", "leases", "bills", "bill"] as Tab[]).map((tab) => (
+            {(["properties", "tenants", "leases", "bills", "bill"] as Tab[]).map((tab) => (
               <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>
                 {tabLabels[tab]}
               </button>
@@ -861,12 +895,25 @@ function App() {
           </nav>
 
           {activeTab === "properties" && (
-            <section className="grid">
-              <form onSubmit={submitProperty} className="card form">
-                <h2>{editingPropertyId ? "Edit Property" : "Add Property"}</h2>
+            <div className="property-unit-page">
+            {propertyModalOpen && (
+              <dialog
+                ref={propertyDialogRef}
+                className="card property-dialog"
+                aria-labelledby="property-dialog-title"
+                onCancel={(event) => {
+                  event.preventDefault();
+                  if (!loading) setPropertyModalOpen(false);
+                }}
+              >
+              <form onSubmit={submitProperty} className="form" aria-busy={loading}>
+                <h2 id="property-dialog-title">{editingPropertyId ? "Edit Property" : "Add Property"}</h2>
+                {error && <p className="alert error" role="alert">{error}</p>}
                 <label>
                   Name
                   <input
+                    autoFocus
+                    disabled={loading}
                     required
                     value={propertyForm.name}
                     onChange={(event) => setPropertyForm({ ...propertyForm, name: event.target.value })}
@@ -875,6 +922,7 @@ function App() {
                 <label>
                   Address
                   <input
+                    disabled={loading}
                     required
                     value={propertyForm.address}
                     onChange={(event) => setPropertyForm({ ...propertyForm, address: event.target.value })}
@@ -883,24 +931,91 @@ function App() {
                 <label>
                   Description
                   <textarea
+                    disabled={loading}
                     value={propertyForm.description}
                     onChange={(event) => setPropertyForm({ ...propertyForm, description: event.target.value })}
                   />
                 </label>
-                <button disabled={loading} className="primary">
-                  {editingPropertyId ? "Save Property" : "Add Property"}
-                </button>
+                <div className="modal-actions">
+                  <button type="button" className="secondary" disabled={loading} onClick={() => setPropertyModalOpen(false)}>
+                    Cancel
+                  </button>
+                  <button disabled={loading} className="primary">
+                    {loading ? "Saving..." : editingPropertyId ? "Save Property" : "Add Property"}
+                  </button>
+                </div>
               </form>
+              </dialog>
+            )}
               <section className="card">
-                <h2>Properties</h2>
-                <DataTable empty="No properties yet.">
-                  {properties.map((property) => (
-                    <tr key={property.id}>
-                      <td>{property.name}</td>
+                <div className="card-header">
+                  <h2>Properties</h2>
+                  <button
+                    className="primary"
+                    disabled={loading}
+                    aria-haspopup="dialog"
+                    onClick={() => {
+                      setEditingPropertyId(null);
+                      setPropertyForm(emptyProperty);
+                      setError("");
+                      setPropertyModalOpen(true);
+                    }}
+                  >
+                    Add Property
+                  </button>
+                </div>
+                <DataTable empty="No properties yet." headers={["Property", "Address", "Description", "Actions"]}>
+                  {properties.map((property) => {
+                    const propertyUnits = units.filter((unit) => unit.property_id === property.id);
+                    const expanded = Boolean(expandedPropertyUnits[property.id]);
+                    const toggleUnits = () => setExpandedPropertyUnits((current) => ({
+                      ...current,
+                      [property.id]: !current[property.id],
+                    }));
+                    return (
+                    <Fragment key={property.id}>
+                    <tr
+                      className={propertyUnits.length > 0 ? `property-row expandable${expanded ? " expanded" : ""}` : "property-row"}
+                      onClick={propertyUnits.length > 0 ? toggleUnits : undefined}
+                    >
+                      <td>
+                          {propertyUnits.length > 0 ? (
+                            <button
+                              type="button"
+                              className="property-expand-trigger"
+                              aria-expanded={expanded}
+                              aria-controls={`property-units-${property.id}`}
+                              aria-label={`${expanded ? "Hide" : "Show"} units for ${property.name}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleUnits();
+                              }}
+                            >
+                              <span className="property-chevron" aria-hidden="true" />
+                              <span>{property.name}</span>
+                              <span className="property-unit-count">{propertyUnits.length} {propertyUnits.length === 1 ? "unit" : "units"}</span>
+                            </button>
+                          ) : <span>{property.name}</span>}
+                      </td>
                       <td>{property.address}</td>
                       <td>{property.description || "-"}</td>
-                      <td className="actions">
+                      <td className="actions" onClick={(event) => event.stopPropagation()}>
                         <button
+                          disabled={loading}
+                          aria-haspopup="dialog"
+                          aria-label={`Add unit to ${property.name}`}
+                          onClick={() => {
+                            setEditingUnitId(null);
+                            setUnitForm({ ...emptyUnit, property_id: String(property.id) });
+                            setError("");
+                            setUnitModalOpen(true);
+                          }}
+                        >
+                          Add Unit
+                        </button>
+                        <button
+                          disabled={loading}
+                          aria-haspopup="dialog"
                           onClick={() => {
                             setEditingPropertyId(property.id);
                             setPropertyForm({
@@ -908,6 +1023,8 @@ function App() {
                               address: property.address,
                               description: property.description ?? "",
                             });
+                            setError("");
+                            setPropertyModalOpen(true);
                           }}
                         >
                           Edit
@@ -922,35 +1039,85 @@ function App() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    {propertyUnits.length > 0 && (
+                    <tr className="property-units-row" id={`property-units-${property.id}`} hidden={!expanded}>
+                      <td colSpan={4}>
+                        <section className="property-units" aria-label={`Units in ${property.name}`}>
+                          <DataTable
+                            empty="No units in this property yet. Use Add Unit to create one."
+                            headers={["Unit", "Description", "Actions"]}
+                            className="compact-table"
+                          >
+                            {propertyUnits.map((unit) => (
+                              <tr key={unit.id}>
+                                <td>{unit.name}</td>
+                                <td>{unit.description || "-"}</td>
+                                <td>
+                                  <div className="compact-row-actions">
+                                    <button
+                                      disabled={loading}
+                                      aria-haspopup="dialog"
+                                      aria-label={`Edit unit ${unit.name} in ${property.name}`}
+                                      onClick={() => {
+                                        setEditingUnitId(unit.id);
+                                        setUnitForm({
+                                          property_id: String(unit.property_id),
+                                          name: unit.name,
+                                          description: unit.description ?? "",
+                                        });
+                                        setError("");
+                                        setUnitModalOpen(true);
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      disabled={loading}
+                                      aria-label={`Delete unit ${unit.name} in ${property.name}`}
+                                      onClick={() =>
+                                        confirmDelete(`unit "${unit.name}"`) &&
+                                        withStatus(() => api.deleteUnit(unit.id).then(loadLandlordData), "Unit deleted.")
+                                      }
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </DataTable>
+                        </section>
+                      </td>
+                    </tr>
+                    )}
+                    </Fragment>
+                    );
+                  })}
                 </DataTable>
               </section>
-            </section>
-          )}
 
-          {activeTab === "units" && (
-            <section className="grid">
-              <form onSubmit={submitUnit} className="card form">
-                <h2>{editingUnitId ? "Edit Unit" : "Add Unit"}</h2>
+            {unitModalOpen && (
+              <dialog
+                ref={unitDialogRef}
+                className="card property-dialog"
+                aria-labelledby="unit-dialog-title"
+                onCancel={(event) => {
+                  event.preventDefault();
+                  if (!loading) setUnitModalOpen(false);
+                }}
+              >
+              <form onSubmit={submitUnit} className="form" aria-busy={loading}>
+                <h2 id="unit-dialog-title">{editingUnitId ? "Edit Unit" : "Add Unit"}</h2>
+                {error && <p className="alert error" role="alert">{error}</p>}
                 <label>
                   Property
-                  <select
-                    required
-                    disabled={Boolean(editingUnitId)}
-                    value={unitForm.property_id}
-                    onChange={(event) => setUnitForm({ ...unitForm, property_id: event.target.value })}
-                  >
-                    <option value="">Select property</option>
-                    {properties.map((property) => (
-                      <option key={property.id} value={property.id}>
-                        {property.name}
-                      </option>
-                    ))}
-                  </select>
+                  <input readOnly value={propertyNameById.get(Number(unitForm.property_id)) ?? ""} />
                 </label>
                 <label>
                   Unit name
                   <input
+                    autoFocus
+                    disabled={loading}
                     required
                     placeholder="Example: Unit 101"
                     value={unitForm.name}
@@ -960,49 +1127,23 @@ function App() {
                 <label>
                   Description
                   <textarea
+                    disabled={loading}
                     value={unitForm.description}
                     onChange={(event) => setUnitForm({ ...unitForm, description: event.target.value })}
                   />
                 </label>
-                <button disabled={loading} className="primary">
-                  {editingUnitId ? "Save Unit" : "Add Unit"}
-                </button>
+                <div className="modal-actions">
+                  <button type="button" className="secondary" disabled={loading} onClick={() => setUnitModalOpen(false)}>
+                    Cancel
+                  </button>
+                  <button disabled={loading} className="primary">
+                    {loading ? "Saving..." : editingUnitId ? "Save Unit" : "Add Unit"}
+                  </button>
+                </div>
               </form>
-              <section className="card">
-                <h2>Units</h2>
-                <DataTable empty="No units yet. Add units under a property.">
-                  {units.map((unit) => (
-                    <tr key={unit.id}>
-                      <td>{unit.name}</td>
-                      <td>{propertyNameById.get(unit.property_id) ?? `Property #${unit.property_id}`}</td>
-                      <td>{unit.description || "-"}</td>
-                      <td className="actions">
-                        <button
-                          onClick={() => {
-                            setEditingUnitId(unit.id);
-                            setUnitForm({
-                              property_id: String(unit.property_id),
-                              name: unit.name,
-                              description: unit.description ?? "",
-                            });
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() =>
-                            confirmDelete(`unit "${unit.name}"`) &&
-                            withStatus(() => api.deleteUnit(unit.id).then(loadLandlordData), "Unit deleted.")
-                          }
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </DataTable>
-              </section>
-            </section>
+              </dialog>
+            )}
+            </div>
           )}
 
           {activeTab === "tenants" && (
