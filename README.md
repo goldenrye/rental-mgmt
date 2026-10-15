@@ -256,22 +256,18 @@ The frontend listens on [http://localhost:5173](http://localhost:5173). The API 
 
 ### Serving the frontend over HTTPS
 
-The frontend's nginx serves HTTPS when both `NGINX_SSL_CERTFILE` and `NGINX_SSL_KEYFILE` are set; port 80 then redirects to HTTPS on 443. nginx also proxies `/api/` to the `api` service, so build the frontend with `VITE_API_BASE_URL=/api` to keep every browser request on the same HTTPS origin (a page served over HTTPS cannot call a plain-HTTP API). For example, in a `docker-compose.override.yml`:
+The frontend's nginx serves HTTPS when both `NGINX_SSL_CERTFILE` and `NGINX_SSL_KEYFILE` are set; port 80 then redirects to HTTPS on 443. nginx also proxies `/api/` to the `api` service, so build the frontend with `VITE_API_BASE_URL=/api` to keep every browser request on the same HTTPS origin (a page served over HTTPS cannot call a plain-HTTP API).
 
-```yaml
-services:
-  frontend:
-    build:
-      args:
-        VITE_API_BASE_URL: /api
-    ports:
-      - "443:443"
-    volumes:
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-    environment:
-      NGINX_SSL_CERTFILE: /etc/letsencrypt/live/<your-host>/fullchain.pem
-      NGINX_SSL_KEYFILE: /etc/letsencrypt/live/<your-host>/privkey.pem
+`docker-compose.prod.yml` sets this up for a Let's Encrypt certificate. Set `DOMAIN` in `.env` and layer it on the base file:
+
+```bash
+echo "DOMAIN=<your-host>" >> .env
+# Optional: make plain `docker compose ...` use both files on this host
+echo "COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml" >> .env
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
+
+The production file publishes only port 443 for the frontend and 8001 for MCP. The API is reachable only through nginx at `https://<your-host>/api`, and Postgres only from the other containers. Host port 80 stays free for certbot's standalone renewal.
 
 nginx reads the certificate at startup, so after a renewal run `docker compose restart frontend mcp`.
 
@@ -291,13 +287,14 @@ Changing `JWT_SECRET_KEY` invalidates every token already issued, so clients mus
 Startup and restart behavior:
 
 - `db` has a `pg_isready` health check. `api` and `mcp` wait until Postgres is healthy before starting, which avoids connection errors on first boot.
+- `api` has a `/health` check, and `mcp` waits for it so the two never create the database schema at the same time.
 - Every service uses `restart: unless-stopped`, so containers come back after a crash or host reboot. Use `docker compose stop` or `docker compose down` to keep them stopped.
 
 ### MCP public URL
 
 `RENTAL_MGMT_MCP_PUBLIC_BASE_URL` is the address MCP clients use to reach the MCP server. It is advertised in the OAuth metadata (`/.well-known/oauth-protected-resource/mcp` and the `WWW-Authenticate` header on 401 responses), so clients use it to discover how to authenticate. If unset, it defaults to `http://<RENTAL_MGMT_MCP_HOST>:<RENTAL_MGMT_MCP_PORT>`, which becomes the unreachable `http://0.0.0.0:8001` inside Docker.
 
-The Compose default is `http://localhost:8001`, which works for local clients only. When deploying, set it to the externally reachable URL without the `/mcp` suffix, and point `RENTAL_MGMT_MCP_AUTH_SERVER_URL` at the public API URL. For example, in a `docker-compose.override.yml`:
+The Compose default is `http://localhost:8001`, which works for local clients only. When deploying, set it to the externally reachable URL without the `/mcp` suffix, and point `RENTAL_MGMT_MCP_AUTH_SERVER_URL` at the public HTTPS API URL (`docker-compose.prod.yml` uses `https://<DOMAIN>:8001` and `https://<DOMAIN>/api`). For example:
 
 ```yaml
 services:
@@ -307,7 +304,7 @@ services:
       RENTAL_MGMT_MCP_AUTH_SERVER_URL: https://api.example.com
 ```
 
-Docker Compose merges `docker-compose.override.yml` automatically on `docker compose up`.
+Pass the file with `-f` after `docker-compose.yml`, or list both in `COMPOSE_FILE`.
 
 ## Public Cloud Deployment
 
