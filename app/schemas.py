@@ -5,6 +5,25 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
+# Bounds the rows one request can create; matches the ten-year limit on extending a bill series.
+MAX_BILL_PERIOD_YEARS = 10
+MAX_BILL_TENANTS = 50
+
+
+def ensure_bill_period_span(period_start: Optional[date], period_end: Optional[date]) -> None:
+    if period_start is None or period_end is None:
+        return
+    limit_year = period_start.year + MAX_BILL_PERIOD_YEARS
+    if limit_year > date.max.year:
+        return
+    try:
+        limit = period_start.replace(year=limit_year)
+    except ValueError:  # February 29
+        limit = period_start.replace(year=limit_year, day=28)
+    if period_end > limit:
+        raise ValueError(f"The bill period can span at most {MAX_BILL_PERIOD_YEARS} years")
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -25,6 +44,7 @@ class UserRead(BaseModel):
     display_name: Optional[str] = None
     role: str
     password_change_required: bool = False
+    is_active: bool = True
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -262,7 +282,7 @@ class BillRead(BaseModel):
 
 class ManualBillCreate(BaseModel):
     lease_id: int
-    tenant_ids: list[int] = Field(min_length=1)
+    tenant_ids: list[int] = Field(min_length=1, max_length=MAX_BILL_TENANTS)
     title: str = Field(min_length=1, max_length=255)
     amount_due: Decimal = Field(gt=0, decimal_places=2)
     recurrence: Literal["one_time", "monthly", "bi_monthly", "quarterly", "semi_annually", "annually", "custom_period"]
@@ -277,6 +297,7 @@ class ManualBillCreate(BaseModel):
                 raise ValueError("period_start and period_end are required for recurring or custom-period bills")
             if self.period_end < self.period_start:
                 raise ValueError("period_end must be on or after period_start")
+        ensure_bill_period_span(self.period_start, self.period_end)
         return self
 
 
@@ -298,6 +319,7 @@ class PropertyBillBase(BaseModel):
                 raise ValueError("period_start and period_end are required for recurring or custom-period bills")
             if self.period_end < self.period_start:
                 raise ValueError("period_end must be on or after period_start")
+        ensure_bill_period_span(self.period_start, self.period_end)
         return self
 
 
@@ -320,6 +342,7 @@ class PropertyBillUpdate(BaseModel):
     def validate_period(self) -> "PropertyBillUpdate":
         if self.period_start and self.period_end and self.period_end < self.period_start:
             raise ValueError("period_end must be on or after period_start")
+        ensure_bill_period_span(self.period_start, self.period_end)
         return self
 
 

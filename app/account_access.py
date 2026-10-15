@@ -81,6 +81,8 @@ def bootstrap_super_admin(db: Session) -> None:
 def issue_login(db: Session, user: User, source: str) -> str:
     state = ensure_access(db, user)
     if not state.is_active:
+        if state.last_login_at is None:
+            raise ValueError("Your account is waiting for administrator approval.")
         raise ValueError("Account is deactivated. Contact the administrator.")
     now = datetime.now(timezone.utc)
     token = create_access_token(str(user.id), state.token_version, session_required=True)

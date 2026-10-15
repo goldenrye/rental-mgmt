@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import inspect, or_, select, text, update
@@ -26,9 +26,11 @@ from app.models import (
     RentalUnit,
     TenantProfile,
     User,
+    UserAccess,
     UserRole,
 )
 from app.schemas import (
+    MAX_BILL_PERIOD_YEARS,
     BillRead,
     GenerateTenantCharges,
     LeaseCreate,
@@ -61,7 +63,7 @@ from app.schemas import (
 from app.security import decode_access_token, hash_password, verify_password
 from app.account_access import bootstrap_super_admin, ensure_access, issue_login, revoke_all_sessions, revoke_session
 from app.admin import router as admin_router
-from app.login_throttle import authenticate
+from app.login_throttle import authenticate, client_ip
 from app.tenant_charges import preview_tenant_charges
 from app.bill_extensions import confirm_extension, preview_extension, track_created_series
 from app.schemas import ConfirmPropertyBillExtension, ExtendPropertyBillRequest, PropertyBillExtensionPreview
@@ -179,7 +181,21 @@ def iter_annual_dates(start: date, end: date) -> list[date]:
     return dates
 
 
+# Monthly bills over the maximum period; also caps annual bills whose due date precedes the period.
+MAX_BILL_OCCURRENCES = 12 * MAX_BILL_PERIOD_YEARS + 1
+
+
 def manual_bill_due_dates(payload: ManualBillCreate | PropertyBillCreate) -> list[date]:
+    due_dates = _manual_bill_due_dates(payload)
+    if len(due_dates) > MAX_BILL_OCCURRENCES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A recurring bill can create at most {MAX_BILL_OCCURRENCES} occurrences",
+        )
+    return due_dates
+
+
+def _manual_bill_due_dates(payload: ManualBillCreate | PropertyBillCreate) -> list[date]:
     if payload.recurrence in {"one_time", "custom_period"}:
         return [payload.due_date]
     if payload.period_start is None or payload.period_end is None:
@@ -418,6 +434,9 @@ def health() -> dict[str, str]:
 
 @app.post("/auth/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def register(payload: UserCreate, db: DbSession) -> User:
+    requires_approval = settings.registration_requires_approval
+    if requires_approval and payload.role != UserRole.landlord.value:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant self-registration is disabled")
     existing = db.scalar(select(User).where(User.email == payload.email))
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -434,6 +453,8 @@ def register(payload: UserCreate, db: DbSession) -> User:
 
     if payload.role == UserRole.landlord.value:
         db.add(LandlordProfile(user_id=user.id))
+        if requires_approval:
+            db.add(UserAccess(user_id=user.id, is_active=False))
     else:
         db.add(TenantProfile(user_id=user.id, full_name=user.full_name, email=user.email))
 
@@ -443,8 +464,8 @@ def register(payload: UserCreate, db: DbSession) -> User:
 
 
 @app.post("/auth/login", response_model=Token)
-def login(payload: LoginRequest, db: DbSession) -> Token:
-    user = authenticate(db, str(payload.email), payload.password)
+def login(payload: LoginRequest, db: DbSession, request: Request) -> Token:
+    user = authenticate(db, str(payload.email), payload.password, client_ip(request))
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     try:
@@ -456,9 +477,10 @@ def login(payload: LoginRequest, db: DbSession) -> Token:
 @app.post("/oauth/token", response_model=Token)
 def oauth_token(
     db: DbSession,
+    request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
 ) -> Token:
-    user = authenticate(db, form.username, form.password)
+    user = authenticate(db, form.username, form.password, client_ip(request))
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
     if user.role != UserRole.landlord.value:

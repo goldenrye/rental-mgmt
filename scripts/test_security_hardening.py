@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 from app.account_access import bootstrap_super_admin
 from app.config import get_settings
 from app.database import Base, get_db
-from app.login_throttle import MAX_FAILURES
+from app.login_throttle import MAX_FAILURES, login_key
 from app.main import app
 from app.models import LandlordProfile, LoginThrottle, TenantProfile, User, UserAccess
 from app.security import hash_password, verify_password
@@ -60,8 +60,14 @@ class SecurityHardeningTests(unittest.TestCase):
         with self.sessions() as db:
             return db.scalar(select(User.hashed_password).where(User.email == "admin"))
 
-    def login(self, email, password):
-        return self.client.post("/auth/login", json={"email": email, "password": password})
+    def login(self, email, password, ip=None):
+        headers = {"X-Real-IP": ip} if ip else {}
+        return self.client.post("/auth/login", json={"email": email, "password": password}, headers=headers)
+
+    def register(self, role="landlord", email="new@example.com"):
+        return self.client.post("/auth/register", json={
+            "email": email, "full_name": "New", "password": "new-password", "role": role,
+        })
 
     def test_weak_or_unset_initial_admin_password_is_replaced_with_random(self):
         for configured in ("", "admin", "short-pass"):
@@ -114,14 +120,14 @@ class SecurityHardeningTests(unittest.TestCase):
         for _ in range(MAX_FAILURES):
             self.login("owner@example.com", "wrong-password")
         with self.sessions() as db:
-            throttle = db.get(LoginThrottle, "owner@example.com")
+            throttle = db.get(LoginThrottle, login_key("owner@example.com", "testclient"))
             past = datetime.now(timezone.utc) - timedelta(minutes=16)
             throttle.locked_until = past
             throttle.window_started_at = past
             db.commit()
         self.assertEqual(self.login("owner@example.com", "owner-password").status_code, 200)
         with self.sessions() as db:
-            self.assertIsNone(db.get(LoginThrottle, "owner@example.com"))
+            self.assertIsNone(db.get(LoginThrottle, login_key("owner@example.com", "testclient")))
 
     def test_unknown_emails_are_throttled_like_real_ones(self):
         for _ in range(MAX_FAILURES):
@@ -139,6 +145,42 @@ class SecurityHardeningTests(unittest.TestCase):
         with self.sessions() as db:
             profile = db.scalar(select(TenantProfile).where(TenantProfile.user_id == self.tenant_user_id))
             self.assertIsNone(profile.landlord_id)
+
+    def test_lockout_from_one_ip_does_not_lock_out_other_ips(self):
+        patch.object(get_settings(), "trust_proxy_headers", True).start()
+        for _ in range(MAX_FAILURES):
+            self.assertEqual(self.login("owner@example.com", "wrong-password", ip="203.0.113.9").status_code, 401)
+        self.assertEqual(self.login("owner@example.com", "owner-password", ip="203.0.113.9").status_code, 429)
+        self.assertEqual(self.login("owner@example.com", "owner-password", ip="198.51.100.4").status_code, 200)
+
+    def test_forwarded_ip_is_ignored_unless_proxy_is_trusted(self):
+        for attempt in range(MAX_FAILURES):
+            self.login("owner@example.com", "wrong-password", ip=f"203.0.113.{attempt}")
+        self.assertEqual(self.login("owner@example.com", "owner-password", ip="198.51.100.4").status_code, 429)
+
+    def test_landlord_registration_waits_for_admin_approval(self):
+        response = self.register()
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.json()["is_active"])
+        pending = self.login("new@example.com", "new-password")
+        self.assertEqual(pending.status_code, 403)
+        self.assertIn("approval", pending.json()["detail"])
+        with self.sessions() as db:
+            user = db.scalar(select(User).where(User.email == "new@example.com"))
+            db.get(UserAccess, user.id).is_active = True
+            db.commit()
+        self.assertEqual(self.login("new@example.com", "new-password").status_code, 200)
+
+    def test_tenant_self_registration_is_disabled_when_approval_is_required(self):
+        self.assertEqual(self.register(role="tenant").status_code, 403)
+        with self.sessions() as db:
+            self.assertIsNone(db.scalar(select(User).where(User.email == "new@example.com")))
+
+    def test_open_registration_when_approval_is_disabled(self):
+        patch.object(get_settings(), "registration_requires_approval", False).start()
+        self.assertTrue(self.register().json()["is_active"])
+        self.assertEqual(self.login("new@example.com", "new-password").status_code, 200)
+        self.assertEqual(self.register(role="tenant", email="t@example.com").status_code, 201)
 
 
 if __name__ == "__main__":

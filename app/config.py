@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
     super_admin_initial_password: str = ""
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    # Read the client IP from nginx's X-Real-IP; enable only when the API port is not publicly reachable.
+    trust_proxy_headers: bool = False
+    # New landlord sign-ups stay inactive until the super admin activates them; tenants cannot self-register.
+    registration_requires_approval: bool = True
 
     @property
     def allowed_origins(self) -> list[str]:

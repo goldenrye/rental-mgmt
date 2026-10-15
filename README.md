@@ -95,6 +95,14 @@ its sessions.
 Sign in as admin and change the initial password right after the first deployment.
 Until you do, anyone who can read the API logs can sign in as admin.
 
+### Approving new landlords
+
+New landlord sign-ups start deactivated and cannot sign in until the admin
+activates them; the admin dashboard shows them as **Pending approval**. Tenant
+self-registration is rejected, because tenant records are created by landlords.
+Set `REGISTRATION_REQUIRES_APPROVAL=false` (for example in local development) to
+make sign-ups active immediately and allow tenant self-registration.
+
 The dedicated admin dashboard only manages landlord accounts. It lists active or
 deactivated status, last login, last activity, and active session counts, with
 search, filtering, and ten entries per page. Admins cannot access landlord
@@ -130,12 +138,17 @@ Management endpoints (super admin only, after initial password change):
 ### Sign-in throttling
 
 After 5 failed password attempts within 15 minutes, a login name is locked for
-15 minutes. Locked attempts return HTTP 429 with `Retry-After`, even when the
-password is correct. Failures are counted per lowercased login name on both `/auth/login` and
+15 minutes from that client IP. Locked attempts return HTTP 429 with `Retry-After`, even when the
+password is correct. Failures are counted per lowercased login name and client IP on both `/auth/login` and
 `/oauth/token`, including names with no account, so lockouts do not reveal
-which emails are registered. A successful sign-in clears the count. A side effect
-is that someone who knows a landlord's email can lock that landlord out for
-15 minutes at a time. The nginx frontend also limits `/api/auth/login`,
+which emails are registered. A successful sign-in clears the count. Because the
+count includes the IP, someone who knows a login name (such as `admin`) can only
+lock out their own IP, not the account owner.
+
+The client IP comes from nginx's `X-Real-IP` header only when
+`TRUST_PROXY_HEADERS=true` (set in `docker-compose.prod.yml`, where the API port is
+not published). Otherwise the TCP peer address is used, because clients that reach
+the API directly could forge the header. The nginx frontend also limits `/api/auth/login`,
 `/api/auth/register`, and `/api/oauth/token` to 10 requests per minute per client IP
 (burst 5).
 
@@ -221,7 +234,7 @@ RENTAL_MGMT_MCP_SSL_KEYFILE=/path/to/privkey.pem \
 python -m app.mcp_server
 ```
 
-The endpoint is then `https://<your-host>:8001/mcp`. In Docker Compose, mount the certificate directory into the `mcp` container and set the same two variables.
+The endpoint is then `https://<your-host>:8001/mcp`. `docker-compose.prod.yml` does not use this: it keeps the `mcp` container unpublished and serves MCP through nginx at `https://<DOMAIN>/mcp`, with TLS, a per-IP rate limit (10 requests/second, burst 40), and the OAuth discovery paths proxied from the same origin.
 
 If you prefer SSE transport:
 
@@ -289,9 +302,20 @@ echo "COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml" >> .env
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-The production file publishes only port 443 for the frontend and 8001 for MCP. The API is reachable only through nginx at `https://<your-host>/api`, and Postgres only from the other containers. Host port 80 stays free for certbot's standalone renewal.
+The production file publishes only ports 80 and 443, both on nginx. Port 80 redirects to HTTPS and serves Let's Encrypt challenges from the host's `/var/www/certbot`. The API is reachable only through nginx at `https://<your-host>/api`, MCP only at `https://<your-host>/mcp`, and Postgres only from the other containers. In the AWS security group, open only 80 and 443 (plus SSH from your own IP); close 8001 if an older deployment opened it.
 
-nginx reads the certificate at startup, so after a renewal run `docker compose restart frontend mcp`.
+nginx sends HSTS, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, and, on the web app, a `Content-Security-Policy` that only allows same-origin scripts, styles, and requests. The CSP also blocks the CDN assets of FastAPI's `/api/docs` page; use `/api/openapi.json` or a local backend for interactive docs.
+
+Because nginx now holds port 80, certificates are renewed with the webroot method. Get the first certificate with `--standalone` before starting the stack, as before. Once the stack is running, switch the renewal method once and add a hook that reloads nginx:
+
+```bash
+sudo mkdir -p /var/www/certbot
+sudo certbot certonly --webroot -w /var/www/certbot -d <your-host> --force-renewal
+printf '#!/bin/sh\ncd %s && docker compose exec -T frontend nginx -s reload\n' "$PWD" \
+  | sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+sudo certbot renew --dry-run
+```
 
 ### Database backups
 
@@ -345,7 +369,7 @@ Startup and restart behavior:
 
 `RENTAL_MGMT_MCP_PUBLIC_BASE_URL` is the address MCP clients use to reach the MCP server. It is advertised in the OAuth metadata (`/.well-known/oauth-protected-resource/mcp` and the `WWW-Authenticate` header on 401 responses), so clients use it to discover how to authenticate. If unset, it defaults to `http://<RENTAL_MGMT_MCP_HOST>:<RENTAL_MGMT_MCP_PORT>`, which becomes the unreachable `http://0.0.0.0:8001` inside Docker.
 
-The Compose default is `http://localhost:8001`, which works for local clients only. When deploying, set it to the externally reachable URL without the `/mcp` suffix, and point `RENTAL_MGMT_MCP_AUTH_SERVER_URL` at the public HTTPS API URL (`docker-compose.prod.yml` uses `https://<DOMAIN>:8001` and `https://<DOMAIN>/api`). For example:
+The Compose default is `http://localhost:8001`, which works for local clients only. When deploying, set it to the externally reachable URL without the `/mcp` suffix, and point `RENTAL_MGMT_MCP_AUTH_SERVER_URL` at the public HTTPS API URL (`docker-compose.prod.yml` uses `https://<DOMAIN>` and `https://<DOMAIN>/api`). For example:
 
 ```yaml
 services:
@@ -369,6 +393,8 @@ Required environment variables:
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: defaults to `1440`
 - `SUPER_ADMIN_INITIAL_PASSWORD`: initial admin password, at least 12 characters. If unset or weak, a random one is generated and printed once to the API log.
 - `CORS_ORIGINS`: comma-separated browser origins allowed to call the API
+- `REGISTRATION_REQUIRES_APPROVAL`: defaults to `true`; new landlords must be activated by the admin and tenants cannot self-register
+- `TRUST_PROXY_HEADERS`: defaults to `false`; set `true` only when the API is reachable solely through nginx, so login lockout uses the real client IP
 
 Frontend build environment variables:
 

@@ -1,11 +1,20 @@
 # Per-client-IP limit for password and registration endpoints (brute force and bcrypt CPU exhaustion).
 limit_req_zone $binary_remote_addr zone=auth:10m rate=10r/m;
+# Per-client-IP limit for MCP requests; each tool call is one request.
+limit_req_zone $binary_remote_addr zone=mcp:10m rate=10r/s;
 
 server {
   listen 80;
   server_name _;
 
-  return 301 https://$host$request_uri;
+  # Let's Encrypt HTTP-01 challenges for `certbot --webroot -w /var/www/certbot`.
+  location /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+  }
+
+  location / {
+    return 301 https://$host$request_uri;
+  }
 }
 
 server {
@@ -18,7 +27,11 @@ server {
   ssl_protocols TLSv1.2 TLSv1.3;
   ssl_session_cache shared:SSL:10m;
 
+  # A location with its own add_header drops these, so `location /` repeats them.
   add_header Strict-Transport-Security "max-age=31536000" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-Frame-Options "DENY" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
   root /usr/share/nginx/html;
   index index.html;
@@ -29,6 +42,7 @@ server {
     rewrite ^/api/(.*)$ /$1 break;
     proxy_pass http://api:8000;
     proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
   }
@@ -37,11 +51,34 @@ server {
   location /api/ {
     proxy_pass http://api:8000/;
     proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
+  # MCP streamable HTTP endpoint and its OAuth discovery metadata; the mcp container is not published.
+  location ~ ^(/mcp(/.*)?|/\.well-known/oauth-protected-resource(/mcp)?|/\.well-known/oauth-authorization-server)$ {
+    limit_req zone=mcp burst=40 nodelay;
+    limit_req_status 429;
+    proxy_pass http://mcp:8001;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # Streamed (SSE) responses must reach the client as they are produced.
+    proxy_buffering off;
+    proxy_read_timeout 1h;
+  }
+
   location / {
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    # The token lives in localStorage, so this limits what an injected script could load or send.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
     try_files $uri $uri/ /index.html;
   }
 }

@@ -199,7 +199,7 @@ export function AdminDashboard({ user, onLogout, onUserChange }: {
             {visible.map((account) => (
               <tr key={account.user_id}>
                 <td>#{account.user_id}</td><td>{account.full_name}</td><td>{account.email}</td>
-                <td><span className={`status ${account.is_active ? "paid" : "unpaid"}`}>{account.is_active ? "Active" : "Deactivated"}</span></td>
+                <td><span className={`status ${account.is_active ? "paid" : "unpaid"}`}>{account.is_active ? "Active" : account.login_status === "never_logged_in" ? "Pending approval" : "Deactivated"}</span></td>
                 <td>{account.login_status === "signed_in" ? "Signed in" : account.login_status === "signed_out" ? "Signed out" : "No recorded login"}</td>
                 <td>{account.active_sessions}</td><td>{dateTime(account.last_login_at)}</td><td>{dateTime(account.last_seen_at)}</td>
                 <td><div className="compact-row-actions">

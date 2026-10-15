@@ -7,6 +7,7 @@ export type User = {
   display_name?: string | null;
   role: UserRole;
   password_change_required: boolean;
+  is_active: boolean;
 };
 
 export type LandlordAccount = {

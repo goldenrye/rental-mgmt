@@ -1,14 +1,19 @@
-"""Password authentication with per-account lockout after repeated failures."""
+"""Password authentication with lockout after repeated failures per login name and client IP.
+
+Keying on the client IP too means an attacker who knows a login name (such as "admin") can
+only lock out their own IP, not the account's owner. nginx's per-IP rate limit bounds how
+fast any one IP can guess."""
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.account_access import utc
+from app.config import get_settings
 from app.models import LoginThrottle, User
 from app.security import hash_password, verify_password
 
@@ -20,8 +25,17 @@ LOCKOUT = timedelta(minutes=15)
 _DUMMY_HASH = hash_password("dummy-password-for-timing")
 
 
-def login_key(identifier: str) -> str:
-    return identifier.strip().lower()[:255]
+def client_ip(request: Request) -> str:
+    # X-Real-IP is set by nginx from the TCP peer; trust it only when the API is reachable solely via nginx.
+    if get_settings().trust_proxy_headers:
+        forwarded = request.headers.get("x-real-ip", "").strip()
+        if forwarded:
+            return forwarded
+    return request.client.host if request.client else "unknown"
+
+
+def login_key(identifier: str, ip: str) -> str:
+    return f"{identifier.strip().lower()[:190]}|{ip[:64]}"
 
 
 def ensure_not_locked(db: Session, key: str) -> None:
@@ -71,9 +85,9 @@ def clear_failures(db: Session, key: str) -> None:
         db.commit()
 
 
-def authenticate(db: Session, identifier: str, password: str) -> Optional[User]:
+def authenticate(db: Session, identifier: str, password: str, ip: str) -> Optional[User]:
     """Return the user for valid credentials, None for invalid ones; raise 429 while locked out."""
-    key = login_key(identifier)
+    key = login_key(identifier, ip)
     ensure_not_locked(db, key)
     user = db.scalar(select(User).where(User.email == identifier))
     if user is None:

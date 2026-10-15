@@ -8,6 +8,7 @@ from decimal import Decimal
 # Importing the API initializes its database; never use rental data in tests.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import select
 
@@ -33,6 +34,30 @@ class BillRecurrenceTests(unittest.TestCase):
             values.update(lease_id=1, tenant_ids=[1])
         values.update(changes)
         return schema(**values)
+
+    def test_period_longer_than_ten_years_is_rejected(self):
+        for schema in (PropertyBillCreate, ManualBillCreate):
+            with self.subTest(schema=schema):
+                self.assertEqual(len(manual_bill_due_dates(self.payload(
+                    schema, recurrence="monthly", period_start="2026-10-01", period_end="2036-10-01",
+                ))), 121)
+                with self.assertRaises(ValidationError):
+                    self.payload(schema, recurrence="monthly", period_start="2026-10-01", period_end="9999-12-31")
+
+    def test_period_limit_handles_leap_day_start(self):
+        self.payload(recurrence="monthly", period_start="2028-02-29", period_end="2038-02-28")
+        with self.assertRaises(ValidationError):
+            self.payload(recurrence="monthly", period_start="2028-02-29", period_end="2038-03-01")
+
+    def test_manual_bill_tenant_count_is_capped(self):
+        with self.assertRaises(ValidationError):
+            self.payload(ManualBillCreate, tenant_ids=list(range(1, 52)))
+
+    def test_annual_bills_from_distant_due_date_are_rejected(self):
+        payload = self.payload(recurrence="annually", due_date="0001-01-01")
+        with self.assertRaises(HTTPException) as raised:
+            manual_bill_due_dates(payload)
+        self.assertEqual(raised.exception.status_code, 400)
 
     def test_every_two_months_across_year_boundary(self):
         for schema in (PropertyBillCreate, ManualBillCreate):

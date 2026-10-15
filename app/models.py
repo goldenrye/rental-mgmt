@@ -47,6 +47,10 @@ class User(Base):
     def password_change_required(self) -> bool:
         return bool(self.access_state and self.access_state.password_change_required)
 
+    @property
+    def is_active(self) -> bool:
+        return self.access_state is None or self.access_state.is_active
+
 
 class UserAccess(Base):
     __tablename__ = "user_access"
@@ -72,7 +76,7 @@ class LoginSession(Base):
 
 
 class LoginThrottle(Base):
-    """Failed password attempts per login name, including names with no account."""
+    """Failed password attempts per login name and client IP, including names with no account."""
 
     __tablename__ = "login_throttles"
 

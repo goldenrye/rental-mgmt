@@ -13,11 +13,13 @@ services:
       args:
         # nginx proxies /api to the api service, so the HTTPS page never calls plain HTTP
         VITE_API_BASE_URL: /api
-    # Only HTTPS is published; host port 80 stays free for certbot's standalone renewal
+    # Port 80 redirects to HTTPS and serves Let's Encrypt webroot challenges
     ports: !override
+      - "80:80"
       - "443:443"
     volumes:
       - *letsencrypt-volume
+      - /var/www/certbot:/var/www/certbot:ro
     environment:
       NGINX_SSL_CERTFILE: /etc/letsencrypt/live/${DOMAIN:?set DOMAIN in .env}/fullchain.pem
       NGINX_SSL_KEYFILE: /etc/letsencrypt/live/${DOMAIN:?set DOMAIN in .env}/privkey.pem
@@ -27,14 +29,14 @@ services:
     ports: !reset []
     environment:
       CORS_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
+      # Unpublished, so only nginx can set X-Real-IP; login lockout is keyed by it
+      TRUST_PROXY_HEADERS: "true"
 
   mcp:
-    volumes:
-      - *letsencrypt-volume
+    # Reached only through nginx at https://${DOMAIN}/mcp, which terminates TLS and rate-limits
+    ports: !reset []
     environment:
-      RENTAL_MGMT_MCP_SSL_CERTFILE: /etc/letsencrypt/live/${DOMAIN:?set DOMAIN in .env}/fullchain.pem
-      RENTAL_MGMT_MCP_SSL_KEYFILE: /etc/letsencrypt/live/${DOMAIN:?set DOMAIN in .env}/privkey.pem
-      RENTAL_MGMT_MCP_PUBLIC_BASE_URL: https://${DOMAIN:?set DOMAIN in .env}:8001
+      RENTAL_MGMT_MCP_PUBLIC_BASE_URL: https://${DOMAIN:?set DOMAIN in .env}
       # Token requests go over HTTPS through the nginx /api proxy
       RENTAL_MGMT_MCP_AUTH_SERVER_URL: https://${DOMAIN:?set DOMAIN in .env}/api
 

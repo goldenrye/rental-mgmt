@@ -432,9 +432,15 @@ function App() {
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    let pendingApproval = false;
     await withStatus(async () => {
       if (authMode === "register") {
-        await api.register(authForm);
+        const registered = await api.register(authForm);
+        if (!registered.is_active) {
+          pendingApproval = true;
+          setAuthMode("login");
+          return;
+        }
       }
       const token = await api.login({ email: authForm.email, password: authForm.password });
       storeToken(token.access_token);
@@ -444,6 +450,9 @@ function App() {
         await loadLandlordData();
       }
     }, authMode === "register" ? "Account created and signed in." : "Signed in.");
+    if (pendingApproval) {
+      setMessage("Account created. An administrator must approve it before you can sign in.");
+    }
   }
 
   async function logout() {
@@ -745,7 +754,7 @@ function App() {
         <section className="auth-card">
           <p className="eyebrow">Rental Management</p>
           <h1>Manage leases, rental, and payments</h1>
-          <p className="muted">Sign in as a landlord to manage properties and tenants, or register a tenant account.</p>
+          <p className="muted">Sign in as a landlord to manage properties and tenants. New landlord accounts are activated by an administrator.</p>
           <div className="toggle">
             <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>
               Login
