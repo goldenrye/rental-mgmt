@@ -590,6 +590,38 @@ td:first-child {
   font-size: 0.8rem;
 }
 
+.property-bill-table .compact-row-actions {
+  gap: 4px;
+}
+
+.property-bill-table .bill-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+}
+
+.property-bill-table .bill-icon-button:hover:not(:disabled) {
+  background: #dbe5f5;
+}
+
+.property-bill-table .bill-icon-button:focus-visible {
+  outline: 2px solid #315fbb;
+  outline-offset: 2px;
+}
+
+.property-bill-table .bill-icon-delete {
+  color: #b42318;
+}
+
+.property-bill-table .bill-icon-delete:hover:not(:disabled) {
+  background: #fee4e2;
+}
+
 .payment-dialog,
 .property-dialog,
 .tenant-dialog {

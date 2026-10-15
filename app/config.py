@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -15,7 +16,10 @@ class Settings(BaseSettings):
     def allowed_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).resolve().parent.parent / ".env",
+        extra="ignore",
+    )
 
 
 @lru_cache

@@ -23,6 +23,22 @@ import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, fil
 import type { PropertyBillFilters } from "./propertyBillFilters";
 import "./styles.css";
 
+function BillActionIcon({ name }: { name: "edit" | "paid" | "unpaid" | "extend" | "generate" | "delete" }) {
+  const paths: Record<typeof name, ReactNode> = {
+    edit: <><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m14 5 5 5" /></>,
+    paid: <><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></>,
+    unpaid: <><path d="M3 4v6h6" /><path d="M3 10a9 9 0 1 1 2 8" /></>,
+    extend: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v4m10-4v4M3 11h18m-9 3v4m-2-2h4" /></>,
+    generate: <><path d="M14 2H5v20h14V7Z" /><path d="M14 2v5h5m-7 5v6m-3-3h6" /></>,
+    delete: <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7" /></>,
+  };
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      {paths[name]}
+    </svg>
+  );
+}
+
 type Tab = "properties" | "tenants" | "leases" | "bills" | "bill";
 const tabLabels: Record<Tab, string> = {
   properties: "Properties & Units",
@@ -1626,28 +1642,39 @@ function App() {
                       <td>
                         <div className="compact-row-actions">
                           <button
+                            className="bill-icon-button"
                             disabled={loading}
                             aria-label={`Edit property bill "${bill.title}"`}
+                            title="Edit bill"
                             onClick={() =>
                               setBillEdit({ id: bill.id, title: bill.title, amount_due: bill.amount_due, due_date: bill.due_date })
                             }
                           >
-                            Edit
+                            <BillActionIcon name="edit" />
                           </button>
-                          <button disabled={loading} onClick={() => updatePropertyBillStatus(bill, bill.status === "paid" ? "unpaid" : "paid")}>
-                            Mark {bill.status === "paid" ? "Unpaid" : "Paid"}
+                          <button
+                            className="bill-icon-button"
+                            disabled={loading}
+                            title={bill.status === "paid" ? "Mark unpaid" : "Mark paid"}
+                            aria-label={`Mark property bill "${bill.title}" ${bill.status === "paid" ? "unpaid" : "paid"}`}
+                            onClick={() => updatePropertyBillStatus(bill, bill.status === "paid" ? "unpaid" : "paid")}
+                          >
+                            <BillActionIcon name={bill.status === "paid" ? "unpaid" : "paid"} />
                           </button>
                           {["monthly", "bi_monthly", "quarterly", "semi_annually", "annually"].includes(bill.recurrence) && (
                             <button
+                              className="bill-icon-button"
                               disabled={loading}
                               aria-haspopup="dialog"
                               aria-label={`Extend repeated bill "${bill.title}"`}
+                              title="Extend repeated bill"
                               onClick={() => setExtensionBill(bill)}
                             >
-                              Extend
+                              <BillActionIcon name="extend" />
                             </button>
                           )}
                           <button
+                            className="bill-icon-button"
                             disabled={loading || Boolean(bill.generated_at)}
                             aria-label={`Generate tenant bills for "${bill.title}"`}
                             title={bill.generated_at ? "Tenant bills already generated" : "Generate tenant bills"}
@@ -1656,17 +1683,19 @@ function App() {
                               setTenantChargeBillId(bill.id);
                             }}
                           >
-                            Generate
+                            <BillActionIcon name="generate" />
                           </button>
                           <button
+                            className="bill-icon-button bill-icon-delete"
                             disabled={loading}
                             aria-label={`Delete property bill "${bill.title}"`}
+                            title="Delete bill"
                             onClick={() =>
                               confirmDelete(`property bill "${bill.title}"`) &&
                               withStatus(() => api.deletePropertyBill(bill.id).then(loadLandlordData), "Property bill deleted.")
                             }
                           >
-                            Delete
+                            <BillActionIcon name="delete" />
                           </button>
                         </div>
                       </td>
