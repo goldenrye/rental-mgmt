@@ -183,6 +183,14 @@ class RentalBill(Base):
     tenant: Mapped["TenantProfile"] = relationship(back_populates="bills")
     payments: Mapped[List["Payment"]] = relationship(back_populates="bill", cascade="all, delete-orphan")
 
+    @property
+    def tenant_name(self) -> str:
+        return self.tenant.full_name
+
+    @property
+    def is_tenant_charge(self) -> bool:
+        return self.source_property_bill_id is not None
+
 
 class Payment(Base):
     __tablename__ = "payments"

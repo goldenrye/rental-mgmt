@@ -16,6 +16,8 @@ import {
   storeToken,
 } from "./api";
 import { PropertyBillFilterDialog } from "./PropertyBillFilterDialog";
+import { TenantChargeDialog } from "./TenantChargeDialog";
+import { PaymentDialog } from "./PaymentDialog";
 import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
 import type { PropertyBillFilters } from "./propertyBillFilters";
 import "./styles.css";
@@ -169,10 +171,13 @@ function App() {
   const [leaseModalOpen, setLeaseModalOpen] = useState(false);
   const [billModalOpen, setBillModalOpen] = useState(false);
   const [billEdit, setBillEdit] = useState<Pick<PropertyBill, "id" | "title" | "amount_due" | "due_date"> | null>(null);
+  const [tenantChargeBillId, setTenantChargeBillId] = useState<number | null>(null);
+  const tenantChargeTrigger = useRef<HTMLButtonElement | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [expandedLeaseId, setExpandedLeaseId] = useState<number | null>(null);
   const [selectedPaymentTenantId, setSelectedPaymentTenantId] = useState<number | null>(null);
+  const [selectedPaymentBillId, setSelectedPaymentBillId] = useState<number | null>(null);
   const [tenantDropdownOpen, setTenantDropdownOpen] = useState(false);
   const [paymentByBill, setPaymentByBill] = useState<Record<number, { amount: string; paid_at: string; note: string }>>({});
   const [message, setMessage] = useState("");
@@ -378,11 +383,13 @@ function App() {
     setPayments([]);
     setManualBillForm(emptyManualBill);
     setSelectedPaymentTenantId(null);
+    setSelectedPaymentBillId(null);
     setExpandedLeaseId(null);
     setLeaseModalOpen(false);
     setBillModalOpen(false);
     setProfileModalOpen(false);
     setBillEdit(null);
+    setTenantChargeBillId(null);
     setBillFilterOpen(false);
     setBillFilter({ ...emptyPropertyBillFilters, ...currentMonthRange() });
     setProfileMenuOpen(false);
@@ -597,14 +604,19 @@ function App() {
     }, "Bill updated. Bills that do not match the active filters are hidden.");
   }
 
-  async function generateTenantBills(propertyBillId: number) {
-    await withStatus(async () => {
-      const generatedBills = await api.generateTenantBillsFromPropertyBill(propertyBillId);
-      const [nextPropertyBills, nextBills] = await Promise.all([api.listPropertyBills(), api.listBills()]);
-      setPropertyBills(nextPropertyBills);
-      setBills(nextBills);
-      setMessage(`${generatedBills.length} tenant bill${generatedBills.length === 1 ? "" : "s"} generated.`);
-    });
+  function closeTenantChargeDialog() {
+    setTenantChargeBillId(null);
+    tenantChargeTrigger.current?.focus();
+  }
+
+  function tenantChargesGenerated(generatedBills: Bill[]) {
+    setBills((current) => [...current.filter((bill) => !generatedBills.some((created) => created.id === bill.id)), ...generatedBills]);
+    setPropertyBills((current) => current.map((bill) =>
+      bill.id === tenantChargeBillId ? { ...bill, generated_at: new Date().toISOString() } : bill,
+    ));
+    setError("");
+    setMessage(`${generatedBills.length} tenant charge${generatedBills.length === 1 ? "" : "s"} generated. View them in Rental & Payments.`);
+    closeTenantChargeDialog();
   }
 
   async function generateBills() {
@@ -622,6 +634,7 @@ function App() {
         paid_at: payment.paid_at || undefined,
         note: payment.note || undefined,
       });
+      setSelectedPaymentBillId(null);
       setPaymentByBill((current) => ({ ...current, [billId]: { amount: "", paid_at: "", note: "" } }));
       const [nextBills, nextPayments] = await Promise.all([api.listBills(), api.listPayments()]);
       setBills(nextBills);
@@ -1441,7 +1454,15 @@ function App() {
                           <button onClick={() => updatePropertyBillStatus(bill, bill.status === "paid" ? "unpaid" : "paid")}>
                             Mark {bill.status === "paid" ? "Unpaid" : "Paid"}
                           </button>
-                          <button onClick={() => generateTenantBills(bill.id)}>Generate Tenant Bill</button>
+                          <button
+                            disabled={loading || Boolean(bill.generated_at)}
+                            onClick={(event) => {
+                              tenantChargeTrigger.current = event.currentTarget;
+                              setTenantChargeBillId(bill.id);
+                            }}
+                          >
+                            {bill.generated_at ? "Tenant Charges Generated" : "Generate Tenant Bill"}
+                          </button>
                           <button
                             onClick={() =>
                               confirmDelete(`property bill "${bill.title}"`) &&
@@ -1456,6 +1477,14 @@ function App() {
                   </div>
                 )}
               </section>
+
+              {tenantChargeBillId !== null && (
+                <TenantChargeDialog
+                  billId={tenantChargeBillId}
+                  onClose={closeTenantChargeDialog}
+                  onGenerated={tenantChargesGenerated}
+                />
+              )}
 
               {billFilterOpen && (
                 <PropertyBillFilterDialog
@@ -1683,7 +1712,11 @@ function App() {
                       Close
                     </button>
                   </div>
-                  <DataTable empty="No payment history for this tenant yet.">
+                  <DataTable
+                    empty="No payment history for this tenant yet."
+                    headers={["Payment ID", "Paid At", "Amount Paid", "Billing Month / Bill ID", "Note"]}
+                    className="compact-table"
+                  >
                     {selectedTenantPayments.map((payment) => {
                       const paymentBill = billById.get(payment.bill_id);
                       return (
@@ -1703,80 +1736,75 @@ function App() {
                   </DataTable>
                 </section>
               )}
-              <DataTable empty="No rental records to show. Generate rental after creating an active lease or enable historic paid rental.">
+              <DataTable
+                empty="No rental records to show. Generate rental after creating an active lease or enable historic paid rental."
+                headers={["Bill ID", "Description", "Tenant", "Billing Month", "Amount Due", "Amount Paid", "Balance", "Status", "Actions"]}
+                className="compact-table rental-table"
+              >
                 {visibleBills.map((bill) => {
-                  const payment = paymentByBill[bill.id] ?? { amount: "", paid_at: "", note: "" };
+                  const isTenantCharge = bill.is_tenant_charge || bill.source_property_bill_id != null;
                   return (
                     <tr key={bill.id}>
                       <td>#{bill.id}</td>
-                      <td>
+                      <td className="bill-description" title={bill.title}>
                         <strong>{bill.title}</strong>
-                        <div className="help-text">{bill.bill_type === "manual" ? "Manual bill" : "Monthly rent"}</div>
                       </td>
                       <td>
                         <button className="link-button" onClick={() => setSelectedPaymentTenantId(bill.tenant_id)}>
-                          {tenantNameById.get(bill.tenant_id) ?? `Tenant #${bill.tenant_id}`}
+                          {bill.tenant_name || tenantNameById.get(bill.tenant_id) || `Tenant #${bill.tenant_id}`}
                         </button>
                       </td>
                       <td>
                         {bill.bill_year}-{String(bill.bill_month).padStart(2, "0")}
                       </td>
-                      <td>${bill.amount_due}</td>
-                      <td>${bill.amount_paid}</td>
-                      <td>${bill.balance}</td>
+                      <td className="numeric">${bill.amount_due}</td>
+                      <td className="numeric">${bill.amount_paid}</td>
+                      <td className="numeric">${bill.balance}</td>
                       <td>
                         <span className={`status ${bill.status}`}>{bill.status}</span>
                       </td>
-                      <td className="payment-form">
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          placeholder="Amount"
-                          value={payment.amount}
-                          onChange={(event) =>
-                            setPaymentByBill((current) => ({
-                              ...current,
-                              [bill.id]: { ...payment, amount: event.target.value },
-                            }))
-                          }
-                        />
-                        <input
-                          type="datetime-local"
-                          value={payment.paid_at}
-                          onChange={(event) =>
-                            setPaymentByBill((current) => ({
-                              ...current,
-                              [bill.id]: { ...payment, paid_at: event.target.value },
-                            }))
-                          }
-                        />
-                        <input
-                          placeholder="Note"
-                          value={payment.note}
-                          onChange={(event) =>
-                            setPaymentByBill((current) => ({
-                              ...current,
-                              [bill.id]: { ...payment, note: event.target.value },
-                            }))
-                          }
-                        />
-                        <button disabled={loading || !payment.amount} onClick={() => recordPayment(bill.id)}>
-                          Pay
-                        </button>
-                        <button
-                          onClick={() =>
-                            confirmDelete(`rental record #${bill.id}`) &&
-                            withStatus(() => api.deleteBill(bill.id).then(loadLandlordData), "Rental record deleted.")
-                          }
-                        >
-                          Delete Rental
-                        </button>
+                      <td>
+                        <div className="rental-row-actions">
+                          <button
+                            disabled={loading || Number(bill.balance) <= 0}
+                            aria-label={`Record payment for bill #${bill.id}`}
+                            onClick={() => {
+                              setError("");
+                              setSelectedPaymentBillId(bill.id);
+                            }}
+                          >
+                            Pay
+                          </button>
+                          <button
+                            disabled={loading}
+                            aria-label={`Delete bill #${bill.id}`}
+                            onClick={() =>
+                              confirmDelete(`${isTenantCharge ? "tenant charge" : "rental record"} #${bill.id}`) &&
+                              withStatus(
+                                () => api.deleteBill(bill.id).then(loadLandlordData),
+                                isTenantCharge ? "Tenant charge deleted." : "Rental record deleted.",
+                              )
+                            }
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
               </DataTable>
+              {selectedPaymentBillId !== null && bills.some((bill) => bill.id === selectedPaymentBillId) && (
+                <PaymentDialog
+                  bill={bills.find((bill) => bill.id === selectedPaymentBillId)!}
+                  payment={paymentByBill[selectedPaymentBillId] ?? { amount: "", paid_at: "", note: "" }}
+                  saving={loading}
+                  error={error}
+                  onChange={(payment) => setPaymentByBill((current) => ({ ...current, [selectedPaymentBillId]: payment }))}
+                  onClose={() => setSelectedPaymentBillId(null)}
+                  onSubmit={() => recordPayment(selectedPaymentBillId)}
+                />
+              )}
             </section>
           )}
         </>
@@ -1792,14 +1820,20 @@ function Status({ error, message }: { error: string; message: string }) {
   return <div className={error ? "alert error" : "alert success"}>{error || message}</div>;
 }
 
-function DataTable({ children, empty }: { children: ReactNode; empty: string }) {
+function DataTable({ children, empty, headers, className }: {
+  children: ReactNode;
+  empty: string;
+  headers?: string[];
+  className?: string;
+}) {
   const rows = Array.isArray(children) ? children.filter(Boolean) : children;
   if (Array.isArray(rows) && rows.length === 0) {
     return <p className="muted">{empty}</p>;
   }
   return (
     <div className="table-wrap">
-      <table>
+      <table className={className}>
+        {headers && <thead><tr>{headers.map((header) => <th scope="col" key={header}>{header}</th>)}</tr></thead>}
         <tbody>{children}</tbody>
       </table>
     </div>

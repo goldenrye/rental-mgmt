@@ -197,6 +197,8 @@ class BillRead(BaseModel):
     landlord_id: int
     lease_id: int
     tenant_id: int
+    tenant_name: str
+    is_tenant_charge: bool
     source_property_bill_id: Optional[int]
     title: str
     bill_type: str
@@ -294,6 +296,31 @@ class PropertyBillRead(BaseModel):
     notes: Optional[str]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TenantChargeShare(BaseModel):
+    tenant_id: int
+    lease_id: int
+    tenant_name: str
+    amount_due: Decimal
+
+
+class TenantChargePreview(BaseModel):
+    property_bill_id: int
+    property_name: str
+    title: str
+    bill_type: str
+    recurrence: str
+    amount_due: Decimal
+    due_date: date
+    period_start: date
+    period_end: date
+    tenants: list[TenantChargeShare]
+    preview_token: str = ""
+
+
+class GenerateTenantCharges(BaseModel):
+    preview_token: str = Field(min_length=64, max_length=64)
 
 
 class PaymentCreate(BaseModel):

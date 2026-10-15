@@ -57,6 +57,8 @@ export type Bill = {
   landlord_id: number;
   lease_id: number;
   tenant_id: number;
+  tenant_name: string;
+  is_tenant_charge: boolean;
   source_property_bill_id?: number | null;
   title: string;
   bill_type: string;
@@ -97,6 +99,20 @@ export type Payment = {
   amount: string;
   paid_at: string;
   note?: string | null;
+};
+
+export type TenantChargePreview = {
+  property_bill_id: number;
+  property_name: string;
+  title: string;
+  bill_type: string;
+  recurrence: string;
+  amount_due: string;
+  due_date: string;
+  period_start: string;
+  period_end: string;
+  preview_token: string;
+  tenants: { tenant_id: number; lease_id: number; tenant_name: string; amount_due: string }[];
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -214,8 +230,13 @@ export const api = {
   updatePropertyBill: (id: number, payload: Partial<PropertyBill>) =>
     request<PropertyBill>(`/property-bills/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deletePropertyBill: (id: number) => request<void>(`/property-bills/${id}`, { method: "DELETE" }),
-  generateTenantBillsFromPropertyBill: (id: number) =>
-    request<Bill[]>(`/property-bills/${id}/generate-tenant-bills`, { method: "POST" }),
+  previewTenantCharges: (id: number) =>
+    request<TenantChargePreview>(`/property-bills/${id}/tenant-bills-preview`),
+  generateTenantBillsFromPropertyBill: (id: number, previewToken: string) =>
+    request<Bill[]>(`/property-bills/${id}/generate-tenant-bills`, {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken }),
+    }),
   listBills: () => request<Bill[]>("/bills"),
   deleteBill: (id: number) => request<void>(`/bills/${id}`, { method: "DELETE" }),
   listPayments: () => request<Payment[]>("/payments"),

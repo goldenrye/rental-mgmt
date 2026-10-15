@@ -449,6 +449,69 @@ td:first-child {
   overflow-x: auto;
 }
 
+.compact-table {
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.compact-table th {
+  background: #f4f7fb;
+  border-bottom: 1px solid #d8dfeb;
+  color: #526078;
+  font-size: 0.75rem;
+}
+
+.compact-table tbody tr:hover {
+  background: #f8fbff;
+}
+
+.rental-table .numeric,
+.rental-table th:nth-child(5),
+.rental-table th:nth-child(6),
+.rental-table th:nth-child(7) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rental-table .bill-description {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rental-row-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.rental-row-actions button {
+  background: #e9eef8;
+  color: #1c2b48;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.payment-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: 90vh;
+  overflow-y: auto;
+  color: #172033;
+  background: #fff;
+}
+
+.payment-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.5);
+}
+
 .actions,
 .payment-form {
   display: flex;
@@ -480,6 +543,11 @@ td:first-child {
   display: grid;
   gap: 16px;
   margin-top: 16px;
+}
+
+.status.tenant-charge {
+  background: #e0e7ff;
+  color: #3730a3;
 }
 
 .bill-card {

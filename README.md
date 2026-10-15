@@ -23,6 +23,14 @@ Property and manual bills support `bi_monthly` recurrence (every two months, not
 
 For bills repeating every six months, select **Repeated bill every six months** (`semi_annually` in the API). This uses the same period and due-day rules, generating a bill in the period's first month and every sixth month afterward.
 
+### Tenant Charges
+
+On a property bill, **Generate Tenant Bill** opens a read-only preview of the eligible tenants, their equal shares, and the tenant charge due date: the last day of the original bill's due-date month (for example, November 1 becomes November 30). Tenants whose leases overlap the original bill's stored period are included once each; bills without a period use the original due date for eligibility. Rounding remainders are distributed one cent at a time so shares always add up to the original amount.
+
+**Confirm & Generate** creates one bill per tenant. **Cancel** creates nothing. Generated bills show each tenant's name, the month-end due date, and a **Tenant charge** label, separate from monthly rent. Existing bills and regular rent due dates are not changed. The source property bill can only be generated once; deleting individual charges does not reset it.
+
+API clients must first call `GET /property-bills/{id}/tenant-bills-preview`, then send its `preview_token` in the JSON body of `POST /property-bills/{id}/generate-tenant-bills`. Changes to the bill or allocation invalidate the preview and return HTTP 409; fetch a fresh preview and confirm again. Bill responses include `tenant_name`, `is_tenant_charge`, and `source_property_bill_id`.
+
 ## Run Backend Locally
 
 ```bash

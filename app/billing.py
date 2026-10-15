@@ -17,6 +17,14 @@ def money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
 
 
+def split_amount(amount: Decimal, count: int) -> list[Decimal]:
+    if count <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one tenant is required")
+    total_cents = int(money(amount) * 100)
+    base_share, remainder = divmod(total_cents, count)
+    return [money(Decimal(base_share + (index < remainder)) / 100) for index in range(count)]
+
+
 def monthly_due_date(year: int, month: int, preferred_day: int) -> date:
     last_day = monthrange(year, month)[1]
     return date(year, month, min(preferred_day, last_day))
