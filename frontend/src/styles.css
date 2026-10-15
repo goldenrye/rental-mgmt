@@ -109,6 +109,32 @@ td:first-child {
   width: 100%;
 }
 
+.admin-password-card {
+  max-width: 520px;
+  margin-bottom: 20px;
+}
+
+.admin-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.admin-filters label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+
+.admin-filters label:first-child {
+  flex: 1 1 240px;
+}
+
+.admin-session-note {
+  font-size: 0.8rem;
+}
+
 .app-shell {
   margin: 0 auto;
   max-width: 1440px;

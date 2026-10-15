@@ -5,13 +5,14 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 
 class UserRole(str, Enum):
+    super_admin = "super_admin"
     landlord = "landlord"
     tenant = "tenant"
 
@@ -40,6 +41,44 @@ class User(Base):
 
     landlord_profile: Mapped[Optional["LandlordProfile"]] = relationship(back_populates="user")
     tenant_profile: Mapped[Optional["TenantProfile"]] = relationship(back_populates="user")
+    access_state: Mapped[Optional["UserAccess"]] = relationship()
+
+    @property
+    def password_change_required(self) -> bool:
+        return bool(self.access_state and self.access_state.password_change_required)
+
+
+class UserAccess(Base):
+    __tablename__ = "user_access"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    token_version: Mapped[int] = mapped_column(nullable=False, default=0)
+    password_change_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class LoginSession(Base):
+    __tablename__ = "login_sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    token_version: Mapped[int] = mapped_column(nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class AdminAuditEvent(Base):
+    __tablename__ = "admin_audit_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    target_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class LandlordProfile(Base):

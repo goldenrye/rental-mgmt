@@ -27,6 +27,7 @@ from app.models import (
     UserRole,
 )
 from app.security import decode_access_token, validate_jwt_configuration
+from app.account_access import validate_account_access
 
 
 MCP_TRANSPORT = getenv("RENTAL_MGMT_MCP_TRANSPORT", "stdio").strip()
@@ -645,6 +646,7 @@ def validate_mcp_bearer_token(token: str) -> AccessToken:
         user = db.get(User, user_id)
         if user is None:
             raise ValueError("JWT user no longer exists")
+        validate_account_access(db, user, payload)
         if user.role != UserRole.landlord.value:
             raise ValueError("Landlord access is required for MCP")
         if user.landlord_profile is None:

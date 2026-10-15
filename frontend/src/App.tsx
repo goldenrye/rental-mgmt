@@ -21,6 +21,7 @@ import { ExtendBillDialog } from "./ExtendBillDialog";
 import { PaymentDialog } from "./PaymentDialog";
 import { DataTable } from "./PaginatedEntries";
 import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
+import { AdminDashboard } from "./AdminDashboard";
 import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
 import type { PropertyBillFilters } from "./propertyBillFilters";
 import "./styles.css";
@@ -445,7 +446,13 @@ function App() {
     }, authMode === "register" ? "Account created and signed in." : "Signed in.");
   }
 
-  function logout() {
+  async function logout() {
+    let revoked = true;
+    try {
+      await api.logout();
+    } catch {
+      revoked = false;
+    }
     clearToken();
     setUser(null);
     setProperties([]);
@@ -473,7 +480,8 @@ function App() {
     setBillFilter({ ...emptyPropertyBillFilters, ...currentMonthRange() });
     setProfileMenuOpen(false);
     setTenantDropdownOpen(false);
-    setMessage("Signed out.");
+    setAuthForm((current) => ({ ...current, password: "" }));
+    setMessage(revoked ? "Signed out." : "Signed out locally. The server could not confirm session revocation.");
   }
 
   function openProfileModal() {
@@ -524,6 +532,10 @@ function App() {
         current_password: profileForm.new_password ? profileForm.current_password : undefined,
         new_password: profileForm.new_password || undefined,
       });
+      if (profileForm.new_password) {
+        const token = await api.login({ email: updatedUser.email, password: profileForm.new_password });
+        storeToken(token.access_token);
+      }
       setUser(updatedUser);
       closeProfileModal();
     }, "Profile updated.");
@@ -766,10 +778,11 @@ function App() {
               </>
             )}
             <label>
-              Email
+              {authMode === "register" ? "Email" : "Email or admin username"}
               <input
                 required
-                type="email"
+                type={authMode === "register" ? "email" : "text"}
+                autoComplete="username"
                 value={authForm.email}
                 onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
               />
@@ -779,8 +792,9 @@ function App() {
               <input
                 required
                 type="password"
-                minLength={8}
+                minLength={authMode === "register" ? 8 : undefined}
                 maxLength={72}
+                autoComplete={authMode === "register" ? "new-password" : "current-password"}
                 value={authForm.password}
                 onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
               />
@@ -793,6 +807,10 @@ function App() {
         </section>
       </main>
     );
+  }
+
+  if (user.role === "super_admin") {
+    return <AdminDashboard user={user} onLogout={logout} onUserChange={setUser} />;
   }
 
   const profileDisplayName = user.display_name || user.full_name;

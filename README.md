@@ -75,6 +75,51 @@ To confirm which database file the app is using and how many records it contains
 python scripts/db_status.py
 ```
 
+## Super Admin
+
+API startup creates a single super-admin account with username **admin** and initial
+password **admin**. Use the normal login page's **Email or admin username** field.
+The first login requires a different password of at least eight characters before
+landlord management is available. Restarting does not reset the admin password.
+Public registration cannot create super admins.
+
+Before exposing a new deployment to the internet, set
+`SUPER_ADMIN_INITIAL_PASSWORD` to a private random password, or complete the initial
+password change while the API is accessible only locally. This setting is used
+only when creating the account; it does not overwrite an existing admin password.
+
+The dedicated admin dashboard only manages landlord accounts. It lists active or
+deactivated status, last login, last activity, and active session counts, with
+search, filtering, and ten entries per page. Admins cannot access landlord
+properties, tenants, leases, bills, payments, tenant-portal data, or MCP tools.
+
+Deactivating a landlord blocks new logins and revokes existing API and MCP tokens.
+Reactivation allows fresh logins but does not restore old tokens. Password resets
+also revoke all sessions and do not reactivate a deactivated account. No rental
+data is deleted. Passwords are hashed, never returned by the management API, and
+admin actions record the actor, target, action, and timestamp in
+`admin_audit_events`, without recording passwords.
+
+Login history begins with this feature; historical login times cannot be
+reconstructed. "Signed in" means an unexpired, unrevoked session exists, not that
+the browser is currently open. Last activity updates at most once per minute on
+authenticated API or MCP requests. Refresh the dashboard to update the snapshot.
+Logout revokes the current session; changing your own password revokes all prior
+sessions. Existing pre-upgrade tokens remain valid until expiry or account
+revocation, but are not counted as tracked sessions.
+
+The new `user_access`, `login_sessions`, and `admin_audit_events` tables are
+created automatically. Existing landlord accounts default to active. Restart
+both API and MCP after upgrading so both enforce the new checks.
+
+Management endpoints (super admin only, after initial password change):
+
+- `GET /admin/landlords`
+- `PATCH /admin/landlords/{user_id}/status` with `{"is_active": false}` or `true`
+- `POST /admin/landlords/{user_id}/password` with `{"new_password": "..."}`
+
+`POST /auth/logout` revokes the current authenticated session.
+
 ## Run MCP Server For AI Agents
 
 The project includes a read-only MCP server that lets AI agents query only the authenticated landlord's data from the same database used by the FastAPI backend. Every list and detail tool is account-scoped; supplying another landlord's ID or email is rejected. MCP sessions cannot be reused by a different account.
@@ -274,6 +319,7 @@ Required environment variables:
 - `JWT_SECRET_KEY`: long random secret for signing tokens
 - `JWT_ALGORITHM`: defaults to `HS256`
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: defaults to `1440`
+- `SUPER_ADMIN_INITIAL_PASSWORD`: initial admin password; defaults to `admin`. Set privately before first public deployment.
 - `CORS_ORIGINS`: comma-separated browser origins allowed to call the API
 
 Frontend build environment variables:

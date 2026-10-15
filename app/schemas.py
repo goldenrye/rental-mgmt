@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class Token(BaseModel):
@@ -20,22 +20,57 @@ class UserCreate(BaseModel):
 
 class UserRead(BaseModel):
     id: int
-    email: EmailStr
+    email: str
     full_name: str
     display_name: Optional[str] = None
     role: str
+    password_change_required: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: EmailStr | Literal["admin"]
     password: str
+
+
+class LandlordAdminRead(BaseModel):
+    user_id: int
+    landlord_id: Optional[int]
+    full_name: str
+    email: str
+    is_active: bool
+    last_login_at: Optional[datetime]
+    last_seen_at: Optional[datetime]
+    active_sessions: int
+    login_status: Literal["signed_in", "signed_out", "never_logged_in"]
+    created_at: datetime
+
+
+class LandlordStatusUpdate(BaseModel):
+    is_active: bool
+
+
+class AdminPasswordReset(BaseModel):
+    new_password: str = Field(min_length=8, max_length=72)
+
+    @model_validator(mode="after")
+    def validate_password_bytes(self) -> "AdminPasswordReset":
+        if len(self.new_password.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return self
 
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
 
 
 class ProfileUpdate(BaseModel):
@@ -43,6 +78,13 @@ class ProfileUpdate(BaseModel):
     display_name: Optional[str] = Field(default=None, max_length=255)
     current_password: Optional[str] = None
     new_password: Optional[str] = Field(default=None, min_length=8, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_bytes(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
 
 
 class PropertyBase(BaseModel):

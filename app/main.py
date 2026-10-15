@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.billing import apply_payment, generate_bills_for_lease, iter_months, money, month_window, monthly_due_date
 from app.config import get_settings
 from app.database import Base, SessionLocal, database_url, engine, migrate_legacy_bill_uniqueness
-from app.deps import CurrentUser, DbSession, Landlord
+from app.deps import BearerToken, CurrentUser, DbSession, Landlord
 from app.models import (
     LandlordProfile,
     Lease,
@@ -58,7 +58,9 @@ from app.schemas import (
     UserCreate,
     UserRead,
 )
-from app.security import create_access_token, hash_password, verify_password
+from app.security import decode_access_token, hash_password, verify_password
+from app.account_access import bootstrap_super_admin, ensure_access, issue_login, revoke_all_sessions, revoke_session
+from app.admin import router as admin_router
 from app.tenant_charges import preview_tenant_charges
 from app.bill_extensions import confirm_extension, preview_extension, track_created_series
 from app.schemas import ConfirmPropertyBillExtension, ExtendPropertyBillRequest, PropertyBillExtensionPreview
@@ -121,7 +123,10 @@ with engine.begin() as connection:
     )
 
 settings = get_settings()
+with SessionLocal() as db:
+    bootstrap_super_admin(db)
 app = FastAPI(title="Rental Management API", version="1.0.0")
+app.include_router(admin_router)
 monthly_bill_scheduler_task: Optional[asyncio.Task[None]] = None
 app.add_middleware(
     CORSMiddleware,
@@ -441,7 +446,10 @@ def login(payload: LoginRequest, db: DbSession) -> Token:
     user = db.scalar(select(User).where(User.email == payload.email))
     if user is None or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-    return Token(access_token=create_access_token(str(user.id)))
+    try:
+        return Token(access_token=issue_login(db, user, "web"))
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @app.post("/oauth/token", response_model=Token)
@@ -454,7 +462,16 @@ def oauth_token(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
     if user.role != UserRole.landlord.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Landlord access is required")
-    return Token(access_token=create_access_token(str(user.id)))
+    try:
+        return Token(access_token=issue_login(db, user, "oauth"))
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/auth/logout", status_code=204)
+def logout(db: DbSession, user: CurrentUser, token: BearerToken) -> Response:
+    revoke_session(db, user, decode_access_token(token))
+    return Response(status_code=204)
 
 
 @app.get("/me", response_model=UserRead)
@@ -470,7 +487,11 @@ def update_profile(payload: ProfileUpdate, db: DbSession, user: CurrentUser) -> 
     if payload.new_password:
         if not payload.current_password or not verify_password(payload.current_password, user.hashed_password):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+        if payload.new_password == payload.current_password:
+            raise HTTPException(status_code=400, detail="Choose a different password")
         user.hashed_password = hash_password(payload.new_password)
+        ensure_access(db, user).password_change_required = False
+        revoke_all_sessions(db, user)
 
     db.add(user)
     db.commit()
@@ -482,7 +503,11 @@ def update_profile(payload: ProfileUpdate, db: DbSession, user: CurrentUser) -> 
 def change_password(payload: PasswordChangeRequest, db: DbSession, user: CurrentUser) -> Response:
     if not verify_password(payload.current_password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    if payload.new_password == payload.current_password:
+        raise HTTPException(status_code=400, detail="Choose a different password")
     user.hashed_password = hash_password(payload.new_password)
+    ensure_access(db, user).password_change_required = False
+    revoke_all_sessions(db, user)
     db.add(user)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

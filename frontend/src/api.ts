@@ -1,4 +1,4 @@
-export type UserRole = "landlord" | "tenant";
+export type UserRole = "landlord" | "tenant" | "super_admin";
 
 export type User = {
   id: number;
@@ -6,6 +6,20 @@ export type User = {
   full_name: string;
   display_name?: string | null;
   role: UserRole;
+  password_change_required: boolean;
+};
+
+export type LandlordAccount = {
+  user_id: number;
+  landlord_id: number | null;
+  full_name: string;
+  email: string;
+  is_active: boolean;
+  last_login_at: string | null;
+  last_seen_at: string | null;
+  active_sessions: number;
+  login_status: "signed_in" | "signed_out" | "never_logged_in";
+  created_at: string;
 };
 
 export type RentalProperty = {
@@ -188,6 +202,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
+  listLandlordAccounts: () => request<LandlordAccount[]>("/admin/landlords"),
+  setLandlordActive: (userId: number, is_active: boolean) =>
+    request<void>(`/admin/landlords/${userId}/status`, { method: "PATCH", body: JSON.stringify({ is_active }) }),
+  resetLandlordPassword: (userId: number, new_password: string) =>
+    request<void>(`/admin/landlords/${userId}/password`, { method: "POST", body: JSON.stringify({ new_password }) }),
   me: () => request<User>("/me"),
   updateProfile: (payload: {
     full_name: string;
