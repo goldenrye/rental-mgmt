@@ -21,7 +21,21 @@ Automatic rent bill generation is current-month only. When a lease starts or end
 
 Property and manual bills support `bi_monthly` recurrence (every two months, not twice a month). In Create Property Bill, select **Repeated bi-monthly bill (every two months)** and supply the period start and end. Like monthly recurrence, bills are created upfront starting in the period's first month, then every second month through the period's final month. The due date supplies the day of the month, clamped to the last day for shorter months; the amount is charged once per generated bill.
 
+For bills repeating quarterly, select **Repeated quarterly bill (every three months)** (`quarterly` in the API). This generates bills upfront in the period's first month and every third month afterward, using the same due-day clamping and amount-per-bill rules. The schedule is anchored to the selected period, not fixed calendar quarters.
+
 For bills repeating every six months, select **Repeated bill every six months** (`semi_annually` in the API). This uses the same period and due-day rules, generating a bill in the period's first month and every sixth month afterward.
+
+### Extending Repeated Property Bills
+
+Use **Extend** on a monthly, bi-monthly, quarterly, six-monthly, or annual property bill. Choose an **Extend through** date and select **Preview Bills**. The popup lists existing bills in that series due today or later, the proposed new bills with due dates and amounts, and the total for the new bills. An optional due day overrides the series due day for new bills only; shorter months use their last day.
+
+**Confirm & Generate** creates only the proposed property bills. Cancel and preview make no database changes. Existing bills, periods, payments, and tenant charges remain unchanged. New bills copy the selected bill's title, category, amount, and notes, start unpaid, and belong to the same series. Their billing period runs from the previous series end plus one day through the chosen new end. Tenant charges must still be generated separately.
+
+New dates retain the original cadence and must fall after the series end and on or before the new end. Existing bill months are skipped; deleted older occurrences are not regenerated. Extend at most ten years at a time. Changes after preview require a refreshed preview, and concurrent confirmations cannot create the same series occurrence twice.
+
+Newly created repeated property bills have explicit series tracking. For older bills, the preview matches property, title, category, recurrence, original period, and creation time and displays a warning to review the match and inferred due day. Ambiguous overlapping legacy batches are rejected instead of silently combined. The first confirmation records membership for future extensions. The two new tracking tables are created automatically at backend startup; no existing bill rows are rewritten.
+
+API: `POST /property-bills/{id}/extension-preview` accepts `through` and optional `due_day`. `POST /property-bills/{id}/extend` accepts the same fields plus the returned `preview_token`. Both require the bill's landlord.
 
 ### Tenant Charges
 

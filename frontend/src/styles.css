@@ -606,6 +606,10 @@ td:first-child {
   background: rgba(15, 23, 42, 0.5);
 }
 
+.extension-dialog {
+  width: min(900px, calc(100vw - 32px));
+}
+
 .actions,
 .payment-form {
   display: flex;

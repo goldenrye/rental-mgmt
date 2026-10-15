@@ -14,6 +14,7 @@ export const billRecurrenceLabels: Record<PropertyBill["recurrence"], string> = 
   one_time: "One-time",
   monthly: "Monthly",
   bi_monthly: "Every two months",
+  quarterly: "Quarterly (every three months)",
   semi_annually: "Every six months",
   annually: "Annually",
   custom_period: "Specified period",

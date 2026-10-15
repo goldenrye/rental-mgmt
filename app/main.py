@@ -60,6 +60,8 @@ from app.schemas import (
 )
 from app.security import create_access_token, hash_password, verify_password
 from app.tenant_charges import preview_tenant_charges
+from app.bill_extensions import confirm_extension, preview_extension, track_created_series
+from app.schemas import ConfirmPropertyBillExtension, ExtendPropertyBillRequest, PropertyBillExtensionPreview
 
 
 Base.metadata.create_all(bind=engine)
@@ -176,7 +178,7 @@ def manual_bill_due_dates(payload: ManualBillCreate | PropertyBillCreate) -> lis
         return [payload.due_date]
     if payload.period_start is None or payload.period_end is None:
         return [payload.due_date]
-    month_steps = {"monthly": 1, "bi_monthly": 2, "semi_annually": 6}
+    month_steps = {"monthly": 1, "bi_monthly": 2, "quarterly": 3, "semi_annually": 6}
     if payload.recurrence in month_steps:
         month_step = month_steps[payload.recurrence]
         return [
@@ -817,10 +819,27 @@ def create_property_bills(payload: PropertyBillCreate, db: DbSession, landlord: 
         )
         db.add(bill)
         bills.append(bill)
+    track_created_series(db, payload, bills, landlord.id)
     db.commit()
     for bill in bills:
         db.refresh(bill)
     return bills
+
+
+@app.post("/property-bills/{bill_id}/extension-preview", response_model=PropertyBillExtensionPreview)
+def preview_property_bill_extension(
+    bill_id: int, payload: ExtendPropertyBillRequest, db: DbSession, landlord: Landlord,
+) -> PropertyBillExtensionPreview:
+    bill = get_property_bill_or_404(db, landlord, bill_id)
+    return preview_extension(db, bill, payload)[0]
+
+
+@app.post("/property-bills/{bill_id}/extend", response_model=list[PropertyBillRead], status_code=201)
+def extend_property_bill(
+    bill_id: int, payload: ConfirmPropertyBillExtension, db: DbSession, landlord: Landlord,
+) -> list[PropertyBill]:
+    bill = get_property_bill_or_404(db, landlord, bill_id)
+    return confirm_extension(db, bill, payload)
 
 
 @app.patch("/property-bills/{bill_id}", response_model=PropertyBillRead)

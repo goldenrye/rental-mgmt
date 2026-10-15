@@ -48,6 +48,43 @@ class BillRecurrenceTests(unittest.TestCase):
             [date(2027, 12, 31), date(2028, 2, 29), date(2028, 4, 30), date(2028, 6, 30)],
         )
 
+    def test_quarterly_across_year_boundary(self):
+        for schema in (PropertyBillCreate, ManualBillCreate):
+            with self.subTest(schema=schema):
+                self.assertEqual(
+                    manual_bill_due_dates(self.payload(schema, recurrence="quarterly")),
+                    [date(2026, 10, 31), date(2027, 1, 31), date(2027, 4, 30)],
+                )
+
+    def test_quarterly_clamps_february_without_day_drift(self):
+        for schema in (PropertyBillCreate, ManualBillCreate):
+            for year, february_day in ((2026, 28), (2027, 29)):
+                with self.subTest(schema=schema, year=year):
+                    self.assertEqual(
+                        manual_bill_due_dates(self.payload(
+                            schema, recurrence="quarterly", period_start=f"{year}-11-01",
+                            period_end=f"{year + 1}-08-31",
+                        )),
+                        [date(year, 11, 30), date(year + 1, 2, february_day),
+                         date(year + 1, 5, 31), date(year + 1, 8, 31)],
+                    )
+
+    def test_quarterly_short_period_and_period_anchor(self):
+        for schema in (PropertyBillCreate, ManualBillCreate):
+            self.assertEqual(
+                manual_bill_due_dates(self.payload(
+                    schema, recurrence="quarterly", period_end="2026-12-31",
+                )),
+                [date(2026, 10, 31)],
+            )
+            self.assertEqual(
+                manual_bill_due_dates(self.payload(
+                    schema, recurrence="quarterly", due_date="2026-11-15",
+                    period_start="2026-10-01", period_end="2027-03-31",
+                )),
+                [date(2026, 10, 15), date(2027, 1, 15)],
+            )
+
     def test_every_six_months_across_year_boundary(self):
         for schema in (PropertyBillCreate, ManualBillCreate):
             with self.subTest(schema=schema):
@@ -99,7 +136,7 @@ class BillRecurrenceTests(unittest.TestCase):
                 {"period_end": None},
                 {"period_end": "2026-09-30"},
             ):
-                for recurrence in ("bi_monthly", "semi_annually"):
+                for recurrence in ("bi_monthly", "quarterly", "semi_annually"):
                     with self.subTest(schema=schema, recurrence=recurrence, changes=changes):
                         with self.assertRaises(ValidationError):
                             self.payload(schema, recurrence=recurrence, **changes)
@@ -143,6 +180,7 @@ class BillRecurrenceTests(unittest.TestCase):
                     [date(2026, 10, 31), date(2026, 12, 31), date(2027, 2, 28), date(2027, 4, 30)],
                 ),
                 ("semi_annually", [date(2026, 10, 31), date(2027, 4, 30)]),
+                ("quarterly", [date(2026, 10, 31), date(2027, 1, 31), date(2027, 4, 30)]),
             ):
                 property_bills = create_property_bills(
                     self.payload(property_id=property_.id, recurrence=recurrence), db, landlord
@@ -159,7 +197,7 @@ class BillRecurrenceTests(unittest.TestCase):
                         self.assertTrue(all(bill.id and bill.recurrence == recurrence for bill in bills))
                         self.assertTrue(all(bill.amount_due == Decimal("60.00") for bill in bills))
             db.expire_all()
-            self.assertEqual(len(db.scalars(select(PropertyBill)).all()), 6)
+            self.assertEqual(len(db.scalars(select(PropertyBill)).all()), 9)
 
 
 if __name__ == "__main__":

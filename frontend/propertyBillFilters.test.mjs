@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { billFilterError, emptyPropertyBillFilters, filterPropertyBills } from "./src/propertyBillFilters.ts";
+import { billFilterError, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./src/propertyBillFilters.ts";
 
 const bills = [
   { id: 1, property_id: 1, bill_type: "water", due_date: "2026-10-01", status: "unpaid", recurrence: "bi_monthly", generated_at: null },
@@ -9,6 +9,15 @@ const bills = [
   { id: 4, property_id: 2, bill_type: "water", due_date: "2026-10-01", status: "unpaid", recurrence: "one_time", generated_at: null },
 ];
 const filteredIds = (filters = {}) => filterPropertyBills(bills, { ...emptyPropertyBillFilters, ...filters }).map((bill) => bill.id);
+
+test("quarterly bills have a label and can be filtered independently", () => {
+  const quarterlyBill = { ...bills[0], id: 5, recurrence: "quarterly" };
+  assert.equal(billRecurrenceLabels.quarterly, "Quarterly (every three months)");
+  assert.deepEqual(
+    filterPropertyBills([...bills, quarterlyBill], { ...emptyPropertyBillFilters, recurrence: "quarterly" }),
+    [quarterlyBill],
+  );
+});
 
 test("empty filters show all bills without changing source order", () => {
   assert.deepEqual(filteredIds(), [1, 2, 3, 4]);

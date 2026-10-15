@@ -81,7 +81,7 @@ export type PropertyBill = {
   bill_type: "electricity" | "water" | "mortgage" | "insurance" | "property_tax" | "maintenance" | "other";
   title: string;
   amount_due: string;
-  recurrence: "one_time" | "monthly" | "bi_monthly" | "semi_annually" | "annually" | "custom_period";
+  recurrence: "one_time" | "monthly" | "bi_monthly" | "quarterly" | "semi_annually" | "annually" | "custom_period";
   due_date: string;
   period_start?: string | null;
   period_end?: string | null;
@@ -89,6 +89,21 @@ export type PropertyBill = {
   paid_at?: string | null;
   generated_at?: string | null;
   notes?: string | null;
+};
+
+export type PropertyBillExtensionPreview = {
+  source_bill_id: number;
+  title: string;
+  property_name: string;
+  recurrence: PropertyBill["recurrence"];
+  current_end: string;
+  through: string;
+  due_day: number;
+  existing_future_bills: PropertyBill[];
+  new_bills: { due_date: string; amount_due: string }[];
+  total_new_amount: string;
+  warning: string | null;
+  preview_token: string;
 };
 
 export type Payment = {
@@ -216,12 +231,21 @@ export const api = {
   deleteLease: (id: number) => request<void>(`/leases/${id}`, { method: "DELETE" }),
   generateCurrentBills: () => request<Bill[]>("/bills/generate-current-month", { method: "POST" }),
   listPropertyBills: () => request<PropertyBill[]>("/property-bills"),
+  previewBillExtension: (id: number, through: string, due_day?: number) =>
+    request<PropertyBillExtensionPreview>(`/property-bills/${id}/extension-preview`, {
+      method: "POST", body: JSON.stringify({ through, due_day }),
+    }),
+  extendPropertyBill: (id: number, preview: PropertyBillExtensionPreview) =>
+    request<PropertyBill[]>(`/property-bills/${id}/extend`, {
+      method: "POST",
+      body: JSON.stringify({ through: preview.through, due_day: preview.due_day, preview_token: preview.preview_token }),
+    }),
   createPropertyBills: (payload: {
     property_id: number;
     bill_type: "electricity" | "water" | "mortgage" | "insurance" | "property_tax" | "maintenance" | "other";
     title: string;
     amount_due: string;
-    recurrence: "one_time" | "monthly" | "bi_monthly" | "semi_annually" | "annually" | "custom_period";
+    recurrence: "one_time" | "monthly" | "bi_monthly" | "quarterly" | "semi_annually" | "annually" | "custom_period";
     due_date: string;
     period_start?: string;
     period_end?: string;

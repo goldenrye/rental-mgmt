@@ -17,6 +17,7 @@ import {
 } from "./api";
 import { PropertyBillFilterDialog } from "./PropertyBillFilterDialog";
 import { TenantChargeDialog } from "./TenantChargeDialog";
+import { ExtendBillDialog } from "./ExtendBillDialog";
 import { PaymentDialog } from "./PaymentDialog";
 import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
 import type { PropertyBillFilters } from "./propertyBillFilters";
@@ -65,7 +66,7 @@ type ManualBillForm = {
   bill_type: "electricity" | "water" | "mortgage" | "insurance" | "property_tax" | "maintenance" | "other";
   title: string;
   amount_due: string;
-  recurrence: "one_time" | "monthly" | "bi_monthly" | "semi_annually" | "annually" | "custom_period";
+  recurrence: "one_time" | "monthly" | "bi_monthly" | "quarterly" | "semi_annually" | "annually" | "custom_period";
   due_date: string;
   period_start: string;
   period_end: string;
@@ -175,6 +176,7 @@ function App() {
   const [editingLeaseId, setEditingLeaseId] = useState<number | null>(null);
   const [leaseModalOpen, setLeaseModalOpen] = useState(false);
   const [billModalOpen, setBillModalOpen] = useState(false);
+  const [extensionBill, setExtensionBill] = useState<PropertyBill | null>(null);
   const [billEdit, setBillEdit] = useState<Pick<PropertyBill, "id" | "title" | "amount_due" | "due_date"> | null>(null);
   const [tenantChargeBillId, setTenantChargeBillId] = useState<number | null>(null);
   const tenantChargeTrigger = useRef<HTMLButtonElement | null>(null);
@@ -433,6 +435,7 @@ function App() {
     setTenantModalOpen(false);
     setProfileModalOpen(false);
     setBillEdit(null);
+    setExtensionBill(null);
     setTenantChargeBillId(null);
     setBillFilterOpen(false);
     setBillFilter({ ...emptyPropertyBillFilters, ...currentMonthRange() });
@@ -1634,6 +1637,16 @@ function App() {
                           <button disabled={loading} onClick={() => updatePropertyBillStatus(bill, bill.status === "paid" ? "unpaid" : "paid")}>
                             Mark {bill.status === "paid" ? "Unpaid" : "Paid"}
                           </button>
+                          {["monthly", "bi_monthly", "quarterly", "semi_annually", "annually"].includes(bill.recurrence) && (
+                            <button
+                              disabled={loading}
+                              aria-haspopup="dialog"
+                              aria-label={`Extend repeated bill "${bill.title}"`}
+                              onClick={() => setExtensionBill(bill)}
+                            >
+                              Extend
+                            </button>
+                          )}
                           <button
                             disabled={loading || Boolean(bill.generated_at)}
                             aria-label={`Generate tenant bills for "${bill.title}"`}
@@ -1661,6 +1674,19 @@ function App() {
                   ))}
                 </DataTable>
               </section>
+
+              {extensionBill && (
+                <ExtendBillDialog
+                  bill={extensionBill}
+                  onClose={() => setExtensionBill(null)}
+                  onGenerated={(created) => {
+                    setPropertyBills((current) => [...current, ...created]);
+                    setExtensionBill(null);
+                    setError("");
+                    setMessage(`${created.length} property bills generated. Active filters may hide new bills.`);
+                  }}
+                />
+              )}
 
               {tenantChargeBillId !== null && (
                 <TenantChargeDialog
@@ -1807,6 +1833,7 @@ function App() {
                         <option value="one_time">One-time bill</option>
                         <option value="monthly">Repeated monthly bill</option>
                         <option value="bi_monthly">Repeated bi-monthly bill (every two months)</option>
+                        <option value="quarterly">Repeated quarterly bill (every three months)</option>
                         <option value="semi_annually">Repeated bill every six months</option>
                         <option value="annually">Repeated annual bill</option>
                         <option value="custom_period">Bill for a specified period</option>

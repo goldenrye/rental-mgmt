@@ -157,6 +157,27 @@ class PropertyBill(Base):
     property: Mapped["RentalProperty"] = relationship(back_populates="property_bills")
 
 
+class PropertyBillSeries(Base):
+    __tablename__ = "property_bill_series"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), nullable=False)
+    anchor: Mapped[date] = mapped_column(Date, nullable=False)
+    due_day: Mapped[int] = mapped_column(nullable=False)
+    recurrence: Mapped[str] = mapped_column(String(32), nullable=False)
+    through: Mapped[date] = mapped_column(Date, nullable=False)
+    version: Mapped[int] = mapped_column(default=0, nullable=False)
+
+
+class PropertyBillSeriesMember(Base):
+    __tablename__ = "property_bill_series_members"
+    __table_args__ = (UniqueConstraint("series_id", "scheduled_date", name="uq_property_series_date"),)
+
+    bill_id: Mapped[int] = mapped_column(ForeignKey("property_bills.id", ondelete="CASCADE"), primary_key=True)
+    series_id: Mapped[str] = mapped_column(ForeignKey("property_bill_series.id"), index=True, nullable=False)
+    scheduled_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+
 class RentalBill(Base):
     __tablename__ = "rental_bills"
 
