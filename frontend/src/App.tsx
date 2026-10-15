@@ -170,6 +170,8 @@ function App() {
   const [unitModalOpen, setUnitModalOpen] = useState(false);
   const unitDialogRef = useRef<HTMLDialogElement>(null);
   const [editingTenantId, setEditingTenantId] = useState<number | null>(null);
+  const [tenantModalOpen, setTenantModalOpen] = useState(false);
+  const tenantDialogRef = useRef<HTMLDialogElement>(null);
   const [editingLeaseId, setEditingLeaseId] = useState<number | null>(null);
   const [leaseModalOpen, setLeaseModalOpen] = useState(false);
   const [billModalOpen, setBillModalOpen] = useState(false);
@@ -210,6 +212,17 @@ function App() {
       if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
     };
   }, [unitModalOpen]);
+
+  useEffect(() => {
+    if (!tenantModalOpen) return;
+    const dialog = tenantDialogRef.current;
+    const trigger = document.activeElement;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+    };
+  }, [tenantModalOpen]);
 
   const propertyNameById = useMemo(
     () => new Map(properties.map((property) => [property.id, property.name])),
@@ -417,6 +430,7 @@ function App() {
     setBillModalOpen(false);
     setPropertyModalOpen(false);
     setUnitModalOpen(false);
+    setTenantModalOpen(false);
     setProfileModalOpen(false);
     setBillEdit(null);
     setTenantChargeBillId(null);
@@ -518,6 +532,7 @@ function App() {
 
   async function submitTenant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (loading) return;
     await withStatus(async () => {
       const payload = {
         full_name: tenantForm.full_name,
@@ -532,6 +547,7 @@ function App() {
       }
       setTenantForm(emptyTenant);
       setEditingTenantId(null);
+      setTenantModalOpen(false);
       await loadLandlordData();
     }, editingTenantId ? "Tenant updated." : "Tenant added.");
   }
@@ -1147,12 +1163,25 @@ function App() {
           )}
 
           {activeTab === "tenants" && (
-            <section className="grid">
-              <form onSubmit={submitTenant} className="card form">
-                <h2>{editingTenantId ? "Edit Tenant" : "Add Tenant"}</h2>
+            <>
+              {tenantModalOpen && (
+              <dialog
+                ref={tenantDialogRef}
+                className="card tenant-dialog"
+                aria-labelledby="tenant-dialog-title"
+                onCancel={(event) => {
+                  event.preventDefault();
+                  if (!loading) setTenantModalOpen(false);
+                }}
+              >
+              <form onSubmit={submitTenant} className="form" aria-busy={loading}>
+                <h2 id="tenant-dialog-title">{editingTenantId ? "Edit Tenant" : "Add Tenant"}</h2>
+                {error && <p className="alert error" role="alert">{error}</p>}
                 <label>
                   Full name
                   <input
+                    autoFocus
+                    disabled={loading}
                     required
                     value={tenantForm.full_name}
                     onChange={(event) => setTenantForm({ ...tenantForm, full_name: event.target.value })}
@@ -1162,34 +1191,59 @@ function App() {
                   Email
                   <input
                     type="email"
+                    disabled={loading}
                     value={tenantForm.email}
                     onChange={(event) => setTenantForm({ ...tenantForm, email: event.target.value })}
                   />
                 </label>
                 <label>
                   Phone
-                  <input value={tenantForm.phone} onChange={(event) => setTenantForm({ ...tenantForm, phone: event.target.value })} />
+                  <input disabled={loading} value={tenantForm.phone} onChange={(event) => setTenantForm({ ...tenantForm, phone: event.target.value })} />
                 </label>
                 <label>
                   Notes
-                  <textarea value={tenantForm.notes} onChange={(event) => setTenantForm({ ...tenantForm, notes: event.target.value })} />
+                  <textarea disabled={loading} value={tenantForm.notes} onChange={(event) => setTenantForm({ ...tenantForm, notes: event.target.value })} />
                 </label>
-                <button disabled={loading} className="primary">
-                  {editingTenantId ? "Save Tenant" : "Add Tenant"}
-                </button>
+                <div className="modal-actions">
+                  <button type="button" className="secondary" disabled={loading} onClick={() => setTenantModalOpen(false)}>
+                    Cancel
+                  </button>
+                  <button disabled={loading} className="primary">
+                    {loading ? "Saving..." : editingTenantId ? "Save Tenant" : "Add Tenant"}
+                  </button>
+                </div>
               </form>
+              </dialog>
+              )}
               <section className="card">
-                <h2>Tenants</h2>
-                <DataTable empty="No tenants yet.">
+                <div className="card-header">
+                  <h2>Tenants</h2>
+                  <button
+                    className="primary"
+                    disabled={loading}
+                    aria-haspopup="dialog"
+                    onClick={() => {
+                      setEditingTenantId(null);
+                      setTenantForm(emptyTenant);
+                      setError("");
+                      setTenantModalOpen(true);
+                    }}
+                  >
+                    Add Tenant
+                  </button>
+                </div>
+                <DataTable empty="No tenants yet." headers={["Tenant ID", "Full Name", "Email", "Phone", "Deposit Paid", "Actions"]} className="compact-table">
                   {tenants.map((tenant) => (
                     <tr key={tenant.id}>
                       <td>#{tenant.id}</td>
                       <td>{tenant.full_name}</td>
                       <td>{tenant.email || "-"}</td>
                       <td>{tenant.phone || "-"}</td>
-                      <td>${(tenantDepositPaidById.get(tenant.id) ?? 0).toFixed(2)} deposit paid</td>
+                      <td>${(tenantDepositPaidById.get(tenant.id) ?? 0).toFixed(2)}</td>
                       <td className="actions">
                         <button
+                          disabled={loading}
+                          aria-haspopup="dialog"
                           onClick={() => {
                             setEditingTenantId(tenant.id);
                             setTenantForm({
@@ -1198,6 +1252,8 @@ function App() {
                               phone: tenant.phone ?? "",
                               notes: tenant.notes ?? "",
                             });
+                            setError("");
+                            setTenantModalOpen(true);
                           }}
                         >
                           Edit
@@ -1215,7 +1271,7 @@ function App() {
                   ))}
                 </DataTable>
               </section>
-            </section>
+            </>
           )}
 
           {activeTab === "leases" && (

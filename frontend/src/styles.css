@@ -591,7 +591,8 @@ td:first-child {
 }
 
 .payment-dialog,
-.property-dialog {
+.property-dialog,
+.tenant-dialog {
   width: min(520px, calc(100vw - 32px));
   max-height: 90vh;
   overflow-y: auto;
@@ -600,7 +601,8 @@ td:first-child {
 }
 
 .payment-dialog::backdrop,
-.property-dialog::backdrop {
+.property-dialog::backdrop,
+.tenant-dialog::backdrop {
   background: rgba(15, 23, 42, 0.5);
 }
 
