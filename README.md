@@ -95,21 +95,20 @@ its sessions.
 Sign in as admin and change the initial password right after the first deployment.
 Until you do, anyone who can read the API logs can sign in as admin.
 
-### Approving new landlords
-
-New landlord sign-ups start deactivated and cannot sign in until the admin
-activates them; the admin dashboard shows them as **Pending approval**. Tenant
-self-registration is rejected, because tenant records are created by landlords.
-Set `REGISTRATION_REQUIRES_APPROVAL=false` (for example in local development) to
-make sign-ups active immediately and allow tenant self-registration.
-
 ### Inviting landlords
 
-To skip manual approval, send a landlord an invitation link. In the admin
-dashboard's **Landlord Invitations** card, optionally enter the landlord's email
-(then only that email can use the link), choose how long it stays valid (1–30
-days, default 7), and select **Create Invite Link**. Copy the link and send it
-yourself, by email or text; the app does not send email.
+Landlord accounts are created by invitation only: signing up without an
+invitation link is rejected, and the Register option appears only when the page
+is opened from an invitation link. Tenant self-registration is also rejected,
+because tenant records are created by landlords. Set `OPEN_REGISTRATION=true`
+(local development only) to allow anyone to register an active landlord or
+tenant account without an invitation.
+
+To invite a landlord, open the admin dashboard's **Landlord Invitations** card,
+optionally enter the landlord's email (then only that email can use the link),
+choose how long it stays valid (1–30 days, default 7), and select **Create
+Invite Link**. Copy the link and send it yourself, by email or text; the app
+does not send email.
 
 The link opens the Register form with the invitation applied. Signing up with it
 creates an active landlord account that is signed in immediately. Each link
@@ -413,7 +412,7 @@ Required environment variables:
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: defaults to `1440`
 - `SUPER_ADMIN_INITIAL_PASSWORD`: initial admin password, at least 12 characters. If unset or weak, a random one is generated and printed once to the API log.
 - `CORS_ORIGINS`: comma-separated browser origins allowed to call the API
-- `REGISTRATION_REQUIRES_APPROVAL`: defaults to `true`; new landlords must be activated by the admin and tenants cannot self-register
+- `OPEN_REGISTRATION`: defaults to `false`; landlords can sign up only with an admin invitation link and tenants cannot self-register. Set `true` only for local development.
 - `TRUST_PROXY_HEADERS`: defaults to `false`; set `true` only when the API is reachable solely through nginx, so login lockout uses the real client IP
 
 Frontend build environment variables:

@@ -26,7 +26,6 @@ from app.models import (
     RentalUnit,
     TenantProfile,
     User,
-    UserAccess,
     UserRole,
 )
 from app.schemas import (
@@ -435,7 +434,6 @@ def health() -> dict[str, str]:
 
 @app.post("/auth/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def register(payload: UserCreate, db: DbSession) -> User:
-    requires_approval = settings.registration_requires_approval
     invite = None
     if payload.invite_code:
         if payload.role != UserRole.landlord.value:
@@ -444,7 +442,12 @@ def register(payload: UserCreate, db: DbSession) -> User:
             invite = find_usable_invite(db, payload.invite_code, str(payload.email))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    elif requires_approval and payload.role != UserRole.landlord.value:
+    elif not settings.open_registration:
+        if payload.role == UserRole.landlord.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Landlord sign-up is by invitation only. Ask the administrator for an invitation link.",
+            )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant self-registration is disabled")
     existing = db.scalar(select(User).where(User.email == payload.email))
     if existing:
@@ -468,8 +471,6 @@ def register(payload: UserCreate, db: DbSession) -> User:
             except ValueError as exc:
                 db.rollback()
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-        elif requires_approval:
-            db.add(UserAccess(user_id=user.id, is_active=False))
     else:
         db.add(TenantProfile(user_id=user.id, full_name=user.full_name, email=user.email))
 

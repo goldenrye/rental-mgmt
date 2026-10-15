@@ -158,26 +158,20 @@ class SecurityHardeningTests(unittest.TestCase):
             self.login("owner@example.com", "wrong-password", ip=f"203.0.113.{attempt}")
         self.assertEqual(self.login("owner@example.com", "owner-password", ip="198.51.100.4").status_code, 429)
 
-    def test_landlord_registration_waits_for_admin_approval(self):
+    def test_landlord_registration_requires_invitation(self):
         response = self.register()
-        self.assertEqual(response.status_code, 201)
-        self.assertFalse(response.json()["is_active"])
-        pending = self.login("new@example.com", "new-password")
-        self.assertEqual(pending.status_code, 403)
-        self.assertIn("approval", pending.json()["detail"])
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("invitation", response.json()["detail"])
         with self.sessions() as db:
-            user = db.scalar(select(User).where(User.email == "new@example.com"))
-            db.get(UserAccess, user.id).is_active = True
-            db.commit()
-        self.assertEqual(self.login("new@example.com", "new-password").status_code, 200)
+            self.assertIsNone(db.scalar(select(User).where(User.email == "new@example.com")))
 
-    def test_tenant_self_registration_is_disabled_when_approval_is_required(self):
+    def test_tenant_self_registration_is_disabled(self):
         self.assertEqual(self.register(role="tenant").status_code, 403)
         with self.sessions() as db:
             self.assertIsNone(db.scalar(select(User).where(User.email == "new@example.com")))
 
-    def test_open_registration_when_approval_is_disabled(self):
-        patch.object(get_settings(), "registration_requires_approval", False).start()
+    def test_open_registration_when_enabled(self):
+        patch.object(get_settings(), "open_registration", True).start()
         self.assertTrue(self.register().json()["is_active"])
         self.assertEqual(self.login("new@example.com", "new-password").status_code, 200)
         self.assertEqual(self.register(role="tenant", email="t@example.com").status_code, 201)

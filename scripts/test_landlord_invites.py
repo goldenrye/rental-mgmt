@@ -130,11 +130,15 @@ class LandlordInviteTests(unittest.TestCase):
         for days in (0, 31):
             self.assertEqual(self.client.post("/admin/invites", headers=self.admin, json={"expires_in_days": days}).status_code, 422)
 
-    def test_registration_without_invite_still_requires_approval(self):
-        response = self.client.post("/auth/register", json={
-            "email": "plain@example.com", "full_name": "Plain", "password": "new-password", "role": "landlord",
-        })
-        self.assertFalse(response.json()["is_active"])
+    def test_landlord_registration_without_invite_is_rejected(self):
+        for code in (None, ""):
+            response = self.client.post("/auth/register", json={
+                "email": "plain@example.com", "full_name": "Plain", "password": "new-password", "role": "landlord",
+                "invite_code": code,
+            })
+            self.assertEqual(response.status_code, 403)
+        with self.sessions() as db:
+            self.assertIsNone(db.scalar(select(User).where(User.email == "plain@example.com")))
 
 
 if __name__ == "__main__":

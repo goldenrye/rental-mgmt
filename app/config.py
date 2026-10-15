@@ -14,8 +14,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     # Read the client IP from nginx's X-Real-IP; enable only when the API port is not publicly reachable.
     trust_proxy_headers: bool = False
-    # New landlord sign-ups stay inactive until the super admin activates them; tenants cannot self-register.
-    registration_requires_approval: bool = True
+    # Off: landlords sign up only with an admin invitation and tenants cannot self-register.
+    # On (local development only): anyone can register an active landlord or tenant account.
+    open_registration: bool = False
 
     @property
     def allowed_origins(self) -> list[str]:

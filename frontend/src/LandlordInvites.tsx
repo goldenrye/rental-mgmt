@@ -76,7 +76,7 @@ export function LandlordInvites() {
         <button className="secondary" disabled={loading} onClick={() => void refresh()}>{loading ? "Loading..." : "Refresh"}</button>
       </div>
       <p className="muted admin-session-note">
-        Send a landlord an invitation link. Signing up with it activates the account right away; sign-ups without a link wait for your approval.
+        Send a landlord an invitation link. Landlords can sign up only with an invitation link, and the account is active right away.
         Each link works once.
       </p>
       <form className="admin-filters" onSubmit={create}>

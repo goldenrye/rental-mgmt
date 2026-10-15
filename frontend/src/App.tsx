@@ -434,21 +434,13 @@ function App() {
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    let pendingApproval = false;
     await withStatus(async () => {
       if (authMode === "register") {
-        const registered = await api.register(
-          inviteCode ? { ...authForm, role: "landlord", invite_code: inviteCode } : authForm,
-        );
-        if (inviteCode) {
-          setInviteCode("");
-          window.history.replaceState(null, "", window.location.pathname + window.location.search);
-        }
-        if (!registered.is_active) {
-          pendingApproval = true;
-          setAuthMode("login");
-          return;
-        }
+        // Landlord accounts are created only through an invitation link.
+        await api.register({ ...authForm, role: "landlord", invite_code: inviteCode });
+        setInviteCode("");
+        setAuthMode("login");
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
       }
       const token = await api.login({ email: authForm.email, password: authForm.password });
       storeToken(token.access_token);
@@ -458,9 +450,6 @@ function App() {
         await loadLandlordData();
       }
     }, authMode === "register" ? "Account created and signed in." : "Signed in.");
-    if (pendingApproval) {
-      setMessage("Account created. An administrator must approve it before you can sign in.");
-    }
   }
 
   async function logout() {
@@ -763,41 +752,32 @@ function App() {
           <p className="eyebrow">Rental Management</p>
           <h1>Manage leases, rental, and payments</h1>
           <p className="muted">
-            Sign in as a landlord to manage properties and tenants.{!inviteCode && " New landlord accounts are activated by an administrator."}
+            Sign in as a landlord to manage properties and tenants.
+            {!inviteCode && " New landlord accounts are by invitation only; ask the administrator for an invitation link."}
           </p>
-          <div className="toggle">
-            <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>
-              Login
-            </button>
-            <button className={authMode === "register" ? "active" : ""} onClick={() => setAuthMode("register")}>
-              Register
-            </button>
-          </div>
+          {inviteCode && (
+            <div className="toggle">
+              <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>
+                Login
+              </button>
+              <button className={authMode === "register" ? "active" : ""} onClick={() => setAuthMode("register")}>
+                Register
+              </button>
+            </div>
+          )}
           <form onSubmit={submitAuth} className="form">
-            {authMode === "register" && inviteCode && (
+            {authMode === "register" && (
               <p className="alert success">You are signing up as a landlord with an invitation. Your account is ready to use as soon as you create it.</p>
             )}
             {authMode === "register" && (
-              <>
-                <label>
-                  Full name
-                  <input
-                    required
-                    value={authForm.full_name}
-                    onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })}
-                  />
-                </label>
-                {!inviteCode && <label>
-                  Role
-                  <select
-                    value={authForm.role}
-                    onChange={(event) => setAuthForm({ ...authForm, role: event.target.value as UserRole })}
-                  >
-                    <option value="landlord">Landlord</option>
-                    <option value="tenant">Tenant</option>
-                  </select>
-                </label>}
-              </>
+              <label>
+                Full name
+                <input
+                  required
+                  value={authForm.full_name}
+                  onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })}
+                />
+              </label>
             )}
             <label>
               {authMode === "register" ? "Email" : "Email or admin username"}
