@@ -53,12 +53,14 @@ python scripts/db_status.py
 
 ## Run MCP Server For AI Agents
 
-The project includes a read-only MCP server that lets AI agents query rental-management data from the same database used by the FastAPI backend.
+The project includes a read-only MCP server that lets AI agents query only the authenticated landlord's data from the same database used by the FastAPI backend. Every list and detail tool is account-scoped; supplying another landlord's ID or email is rejected. MCP sessions cannot be reused by a different account.
+
+API and MCP must use the same strong `JWT_SECRET_KEY` (at least 32 characters, generated randomly, for example with `openssl rand -hex 32`). Placeholder secrets are rejected. This is a server signing secret, not a per-landlord password; never give it to MCP clients. Use HTTPS for remote token requests and MCP connections.
 
 Run it as a local stdio server when the MCP client runs on the same host:
 
 ```bash
-python -m app.mcp_server
+RENTAL_MGMT_MCP_TOKEN="$TOKEN" python -m app.mcp_server
 ```
 
 Example local MCP client configuration:
@@ -69,7 +71,10 @@ Example local MCP client configuration:
     "rental-management": {
       "command": "python",
       "args": ["-m", "app.mcp_server"],
-      "cwd": "/Users/bytedance/Projects/rental-mgmt"
+      "cwd": "/Users/bytedance/Projects/rental-mgmt",
+      "env": {
+        "RENTAL_MGMT_MCP_TOKEN": "<your landlord access token>"
+      }
     }
   }
 }
@@ -90,14 +95,16 @@ The remote MCP endpoint is:
 http://localhost:8001/mcp
 ```
 
-Remote MCP authentication is enabled by default. The MCP server validates OAuth bearer JWTs issued by the FastAPI app, so `JWT_SECRET_KEY` and `JWT_ALGORITHM` must match between the API and MCP server.
+Remote MCP authentication is mandatory; `RENTAL_MGMT_MCP_AUTH_ENABLED=false` is rejected. The MCP server validates OAuth bearer JWTs issued by the FastAPI app, so `JWT_SECRET_KEY` and `JWT_ALGORITHM` must match between the API and MCP server. Stdio also requires a landlord token via `RENTAL_MGMT_MCP_TOKEN`; it no longer provides unrestricted database access.
 
-Get a landlord access token:
+Get a landlord access token using that landlord's own email and password. Set `LANDLORD_EMAIL` and `LANDLORD_PASSWORD` in your shell first:
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8000/oauth/token \
+TOKEN=$(curl --fail-with-body -sS -X POST http://localhost:8000/oauth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password&username=owner@example.com&password=password123" \
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "username=$LANDLORD_EMAIL" \
+  --data-urlencode "password=$LANDLORD_PASSWORD" \
   | python -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
 ```
 
@@ -108,7 +115,9 @@ claude mcp add --transport http rental-management http://localhost:8001/mcp \
   --header "Authorization: Bearer $TOKEN"
 ```
 
-Treat any bearer token like a password. If it is leaked while valid, anyone who can reach the MCP endpoint can access rental data. Tokens expire according to `ACCESS_TOKEN_EXPIRE_MINUTES`; rotate `JWT_SECRET_KEY` to revoke all issued JWTs.
+Each login issues a unique token (`jti`) whose signed `sub` identifies the authenticated user. Logging in repeatedly with the same credentials still accesses the same landlord account, not a new account. Landlord identity is resolved from the database, never from tool arguments.
+
+Treat any bearer token like a password. If it is leaked while valid, anyone who can reach the MCP endpoint can access that landlord's data. Tokens expire according to `ACCESS_TOKEN_EXPIRE_MINUTES`; rotate `JWT_SECRET_KEY` on both services to revoke all issued JWTs. After upgrading, install the updated requirements (MCP SDK 1.30+), restart API and MCP, and obtain fresh tokens. Existing valid tokens are also restricted by the new ownership checks.
 
 To serve the remote endpoint over HTTPS, point the server at a certificate and private key (both are required; this applies to `streamable-http` and `sse`):
 
@@ -144,8 +153,8 @@ Keep remote MCP endpoints private or protected behind your network/auth gateway 
 
 Available MCP tools:
 
-- `database_status`: show the resolved database URL.
-- `list_landlords`: list landlord IDs and emails for filtering.
+- `database_status`: verify authenticated database access without exposing the database URL or credentials.
+- `list_landlords`: show only the signed-in landlord's profile.
 - `list_properties`: list properties and units.
 - `list_tenants`: list tenants, rent totals, and deposit totals.
 - `list_leases`: list leases with tenants, rent shares, and deposits.
@@ -201,10 +210,10 @@ nginx reads the certificate at startup, so after a renewal run `docker compose r
 
 `api` and `mcp` share their database and JWT settings through the `x-backend-env` anchor at the top of `docker-compose.yml`, so both services always use the same `DATABASE_URL` and `JWT_SECRET_KEY`. They must match, because the MCP server validates tokens issued by the API.
 
-Set a real JWT secret before running anywhere other than your laptop. Compose reads it from your shell or from a `.env` file next to `docker-compose.yml`; otherwise it falls back to an insecure placeholder:
+Set a real JWT secret before running, including locally. Compose reads it from your shell or from a `.env` file next to `docker-compose.yml`; its placeholder fallback is rejected by the application:
 
 ```bash
-echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" > .env
+export JWT_SECRET_KEY="$(openssl rand -hex 32)"
 docker compose up -d --build
 ```
 

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import jwt
 from passlib.context import CryptContext
@@ -7,6 +8,14 @@ from app.config import get_settings
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def validate_jwt_configuration() -> None:
+    secret = get_settings().jwt_secret_key
+    if len(secret) < 32 or secret in {
+        "change-me-in-production", "replace-this-with-a-long-random-secret",
+    }:
+        raise RuntimeError("Set JWT_SECRET_KEY to a random secret of at least 32 characters on both API and MCP")
 
 
 def hash_password(password: str) -> str:
@@ -18,12 +27,18 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(subject: str) -> str:
+    validate_jwt_configuration()
     settings = get_settings()
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload = {"sub": subject, "exp": expires_at}
+    issued_at = datetime.now(timezone.utc)
+    expires_at = issued_at + timedelta(minutes=settings.access_token_expire_minutes)
+    payload = {"sub": subject, "iat": issued_at, "exp": expires_at, "jti": uuid4().hex}
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> dict:
+    validate_jwt_configuration()
     settings = get_settings()
-    return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    return jwt.decode(
+        token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm],
+        options={"require": ["sub", "exp"]},
+    )

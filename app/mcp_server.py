@@ -6,11 +6,14 @@ import sys
 from typing import Any, Optional
 
 import jwt
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from mcp.server.auth.provider import AccessToken
 from mcp.server.fastmcp import FastMCP
 from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session, selectinload
+from starlette.authentication import AuthCredentials
 
-from app.database import Base, SessionLocal, database_url, engine
+from app.database import Base, SessionLocal, engine
 from app.models import (
     LandlordProfile,
     Lease,
@@ -19,12 +22,11 @@ from app.models import (
     PropertyBill,
     RentalBill,
     RentalProperty,
-    RentalUnit,
     TenantProfile,
     User,
     UserRole,
 )
-from app.security import decode_access_token
+from app.security import decode_access_token, validate_jwt_configuration
 
 
 MCP_TRANSPORT = getenv("RENTAL_MGMT_MCP_TRANSPORT", "stdio").strip()
@@ -219,40 +221,59 @@ def parse_date(value: Optional[str], field_name: str) -> Optional[date]:
         raise ValueError(f"{field_name} must use YYYY-MM-DD format") from exc
 
 
-def resolve_landlord_id(db: Session, landlord_id: Optional[int], landlord_email: Optional[str]) -> Optional[int]:
-    if landlord_id is not None:
-        return landlord_id
-    if landlord_email is None:
-        return None
-
-    user = db.scalar(select(User).where(User.email == landlord_email))
+def resolve_landlord_id(db: Session, landlord_id: Optional[int] = None, landlord_email: Optional[str] = None) -> int:
+    # Read the current message's request, not a process-global or session-cached identity.
+    # HTTP/SSE dispatch can outlive the middleware task that accepted the message.
+    try:
+        request = mcp.get_context().request_context.request
+    except (ValueError, LookupError):
+        request = None
+    if request is not None:
+        token = McpOAuthMiddleware.extract_bearer_token(request.scope)
+    elif MCP_TRANSPORT == "stdio":
+        token = getenv("RENTAL_MGMT_MCP_TOKEN", "").strip()
+    else:
+        token = None
+    if not token:
+        raise ValueError("An authenticated landlord token is required")
+    identity = validate_mcp_bearer_token(token)
+    user = db.get(User, int(identity.client_id))
     if user is None or user.landlord_profile is None:
-        raise ValueError(f"No landlord found for email {landlord_email}")
-    return user.landlord_profile.id
+        raise ValueError("Landlord profile is required")
+    owned_id = user.landlord_profile.id
+    if (landlord_id is not None and landlord_id != owned_id) or (
+        landlord_email is not None and landlord_email != user.email
+    ):
+        raise ValueError("Access to another landlord's data is forbidden")
+    return owned_id
 
 
 @mcp.tool()
 def database_status():
-    """Return the resolved database URL used by the MCP server."""
-    return {"database_url": database_url}
+    """Check the authenticated landlord's database access without exposing connection credentials."""
+    with SessionLocal() as db:
+        return {"status": "ok", "landlord_id": resolve_landlord_id(db)}
 
 
 @mcp.tool()
 def list_landlords():
-    """List landlord profiles so agents can find a landlord_id for other tools."""
+    """Return only the authenticated landlord's profile."""
     with SessionLocal() as db:
-        landlords = db.scalars(select(LandlordProfile).options(selectinload(LandlordProfile.user))).all()
+        owned_id = resolve_landlord_id(db)
+        landlords = db.scalars(
+            select(LandlordProfile).options(selectinload(LandlordProfile.user))
+            .where(LandlordProfile.id == owned_id)
+        ).all()
         return [landlord_to_dict(landlord) for landlord in landlords]
 
 
 @mcp.tool()
 def list_properties(landlord_id: int = None, landlord_email: str = None):
-    """List rental properties and units, optionally filtered by landlord_id or landlord_email."""
+    """List the authenticated landlord's properties and units. Landlord filters must match the caller."""
     with SessionLocal() as db:
         resolved_landlord_id = resolve_landlord_id(db, landlord_id, landlord_email)
         query = select(RentalProperty).options(selectinload(RentalProperty.units))
-        if resolved_landlord_id is not None:
-            query = query.where(RentalProperty.landlord_id == resolved_landlord_id)
+        query = query.where(RentalProperty.landlord_id == resolved_landlord_id)
         return [property_to_dict(property_) for property_ in db.scalars(query).all()]
 
 
@@ -262,8 +283,7 @@ def list_tenants(landlord_id: int = None, landlord_email: str = None):
     with SessionLocal() as db:
         resolved_landlord_id = resolve_landlord_id(db, landlord_id, landlord_email)
         query = select(TenantProfile).options(selectinload(TenantProfile.leases))
-        if resolved_landlord_id is not None:
-            query = query.where(TenantProfile.landlord_id == resolved_landlord_id)
+        query = query.where(TenantProfile.landlord_id == resolved_landlord_id)
         return [tenant_to_dict(tenant) for tenant in db.scalars(query).all()]
 
 
@@ -282,8 +302,7 @@ def list_leases(
             selectinload(Lease.unit),
             selectinload(Lease.tenants).selectinload(LeaseTenant.tenant),
         )
-        if resolved_landlord_id is not None:
-            query = query.where(Lease.landlord_id == resolved_landlord_id)
+        query = query.where(Lease.landlord_id == resolved_landlord_id)
         if property_id is not None:
             query = query.where(Lease.property_id == property_id)
         if tenant_id is not None:
@@ -307,8 +326,7 @@ def list_property_bills(
     with SessionLocal() as db:
         resolved_landlord_id = resolve_landlord_id(db, landlord_id, landlord_email)
         query = select(PropertyBill).options(selectinload(PropertyBill.property))
-        if resolved_landlord_id is not None:
-            query = query.where(PropertyBill.landlord_id == resolved_landlord_id)
+        query = query.where(PropertyBill.landlord_id == resolved_landlord_id)
         if property_id is not None:
             query = query.where(PropertyBill.property_id == property_id)
         if status is not None:
@@ -343,8 +361,7 @@ def list_rental_bills(
             selectinload(RentalBill.lease).selectinload(Lease.property),
             selectinload(RentalBill.lease).selectinload(Lease.unit),
         )
-        if resolved_landlord_id is not None:
-            query = query.where(RentalBill.landlord_id == resolved_landlord_id)
+        query = query.where(RentalBill.landlord_id == resolved_landlord_id)
         if tenant_id is not None:
             query = query.where(RentalBill.tenant_id == tenant_id)
         if property_id is not None:
@@ -377,8 +394,7 @@ def list_payments(
             selectinload(Payment.bill).selectinload(RentalBill.lease).selectinload(Lease.property),
             selectinload(Payment.bill).selectinload(RentalBill.lease).selectinload(Lease.unit),
         )
-        if resolved_landlord_id is not None:
-            query = query.where(Payment.landlord_id == resolved_landlord_id)
+        query = query.where(Payment.landlord_id == resolved_landlord_id)
         if tenant_id is not None:
             query = query.where(Payment.tenant_id == tenant_id)
         if start_date is not None:
@@ -393,7 +409,10 @@ def list_payments(
 def get_tenant_payment_history(tenant_id: int):
     """Return one tenant's profile, rental bills, and payment history."""
     with SessionLocal() as db:
-        tenant = db.scalar(select(TenantProfile).where(TenantProfile.id == tenant_id))
+        owned_id = resolve_landlord_id(db)
+        tenant = db.scalar(select(TenantProfile).where(
+            TenantProfile.id == tenant_id, TenantProfile.landlord_id == owned_id,
+        ))
         if tenant is None:
             raise ValueError(f"Tenant {tenant_id} not found")
 
@@ -404,7 +423,7 @@ def get_tenant_payment_history(tenant_id: int):
                 selectinload(RentalBill.lease).selectinload(Lease.property),
                 selectinload(RentalBill.lease).selectinload(Lease.unit),
             )
-            .where(RentalBill.tenant_id == tenant_id)
+            .where(RentalBill.tenant_id == tenant_id, RentalBill.landlord_id == owned_id)
             .order_by(RentalBill.due_date.desc(), RentalBill.id.desc())
         ).all()
         payments = db.scalars(
@@ -414,7 +433,7 @@ def get_tenant_payment_history(tenant_id: int):
                 selectinload(Payment.bill).selectinload(RentalBill.lease).selectinload(Lease.property),
                 selectinload(Payment.bill).selectinload(RentalBill.lease).selectinload(Lease.unit),
             )
-            .where(Payment.tenant_id == tenant_id)
+            .where(Payment.tenant_id == tenant_id, Payment.landlord_id == owned_id)
             .order_by(Payment.paid_at.desc(), Payment.id.desc())
         ).all()
 
@@ -429,10 +448,11 @@ def get_tenant_payment_history(tenant_id: int):
 def get_property_overview(property_id: int):
     """Return one property's units, leases, property bills, and tenant-payable rental bills."""
     with SessionLocal() as db:
+        owned_id = resolve_landlord_id(db)
         property_ = db.scalar(
             select(RentalProperty)
             .options(selectinload(RentalProperty.units))
-            .where(RentalProperty.id == property_id)
+            .where(RentalProperty.id == property_id, RentalProperty.landlord_id == owned_id)
         )
         if property_ is None:
             raise ValueError(f"Property {property_id} not found")
@@ -444,13 +464,13 @@ def get_property_overview(property_id: int):
                 selectinload(Lease.unit),
                 selectinload(Lease.tenants).selectinload(LeaseTenant.tenant),
             )
-            .where(Lease.property_id == property_id)
+            .where(Lease.property_id == property_id, Lease.landlord_id == owned_id)
             .order_by(Lease.start_date.desc(), Lease.id.desc())
         ).all()
         property_bills = db.scalars(
             select(PropertyBill)
             .options(selectinload(PropertyBill.property))
-            .where(PropertyBill.property_id == property_id)
+            .where(PropertyBill.property_id == property_id, PropertyBill.landlord_id == owned_id)
             .order_by(PropertyBill.due_date.desc(), PropertyBill.id.desc())
         ).all()
         rental_bills = db.scalars(
@@ -461,7 +481,7 @@ def get_property_overview(property_id: int):
                 selectinload(RentalBill.lease).selectinload(Lease.property),
                 selectinload(RentalBill.lease).selectinload(Lease.unit),
             )
-            .where(Lease.property_id == property_id)
+            .where(Lease.property_id == property_id, RentalBill.landlord_id == owned_id)
             .order_by(RentalBill.due_date.desc(), RentalBill.id.desc())
         ).unique().all()
 
@@ -538,11 +558,13 @@ class McpOAuthMiddleware:
             await self.send_unauthorized(send, "missing_token", "Authorization bearer token is required")
             return
         try:
-            validate_mcp_bearer_token(token)
+            identity = validate_mcp_bearer_token(token)
         except ValueError as exc:
             await self.send_unauthorized(send, "invalid_token", str(exc))
             return
 
+        # Let the SDK bind both SSE and streamable HTTP sessions to their owner.
+        scope = {**scope, "user": AuthenticatedUser(identity), "auth": AuthCredentials(identity.scopes)}
         await self.app(scope, receive, send)
 
     @staticmethod
@@ -598,36 +620,49 @@ def authorization_server_metadata() -> dict[str, Any]:
         "token_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": ["rental:read"],
         "response_types_supported": ["token"],
-        "grant_types_supported": ["client_credentials"],
-        "token_endpoint": f"{MCP_AUTH_SERVER_URL}/auth/login",
+        "grant_types_supported": ["password"],
+        "token_endpoint": f"{MCP_AUTH_SERVER_URL}/oauth/token",
     }
 
 
-def validate_mcp_bearer_token(token: str) -> None:
+def validate_mcp_bearer_token(token: str) -> AccessToken:
     try:
         payload = decode_access_token(token)
     except jwt.PyJWTError as exc:
         raise ValueError("Invalid or expired JWT access token") from exc
 
     subject = payload.get("sub")
-    if subject is None:
-        raise ValueError("JWT subject is missing")
+    if not isinstance(subject, str) or not subject.isascii() or not subject.isdigit():
+        raise ValueError("JWT subject must identify a user")
+    try:
+        user_id = int(subject)
+    except ValueError as exc:
+        raise ValueError("Invalid JWT subject") from exc
+    if not 0 < user_id <= 9223372036854775807:
+        raise ValueError("Invalid JWT subject")
 
     with SessionLocal() as db:
-        user = db.get(User, int(subject))
+        user = db.get(User, user_id)
         if user is None:
             raise ValueError("JWT user no longer exists")
         if user.role != UserRole.landlord.value:
             raise ValueError("Landlord access is required for MCP")
+        if user.landlord_profile is None:
+            raise ValueError("Landlord profile is required for MCP")
+        return AccessToken(
+            token=token, client_id=str(user.id), subject=str(user.id),
+            scopes=["rental:read"], expires_at=int(payload["exp"]),
+        )
 
 
 def secure_remote_mcp_app(app: Any) -> Any:
     if not MCP_AUTH_ENABLED:
-        return app
+        raise ValueError("Remote MCP authentication cannot be disabled")
     return McpOAuthMiddleware(app)
 
 
 if __name__ == "__main__":
+    validate_jwt_configuration()
     if MCP_TRANSPORT not in VALID_TRANSPORTS:
         raise ValueError(
             "RENTAL_MGMT_MCP_TRANSPORT must be one of: "
