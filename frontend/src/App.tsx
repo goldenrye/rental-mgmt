@@ -163,6 +163,7 @@ function App() {
   const [editingLeaseId, setEditingLeaseId] = useState<number | null>(null);
   const [leaseModalOpen, setLeaseModalOpen] = useState(false);
   const [billModalOpen, setBillModalOpen] = useState(false);
+  const [billEdit, setBillEdit] = useState<Pick<PropertyBill, "id" | "title" | "amount_due" | "due_date"> | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [expandedLeaseId, setExpandedLeaseId] = useState<number | null>(null);
@@ -363,6 +364,7 @@ function App() {
     setLeaseModalOpen(false);
     setBillModalOpen(false);
     setProfileModalOpen(false);
+    setBillEdit(null);
     setProfileMenuOpen(false);
     setTenantDropdownOpen(false);
     setMessage("Signed out.");
@@ -562,15 +564,17 @@ function App() {
     }, status === "paid" ? "Bill marked as paid." : "Bill marked as unpaid.");
   }
 
-  async function editPropertyBillAmount(bill: PropertyBill) {
-    const amountDue = window.prompt(`Update amount for "${bill.title}"`, bill.amount_due);
-    if (amountDue === null) {
+  async function submitBillEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!billEdit || loading) {
       return;
     }
+    const { id, amount_due, due_date } = billEdit;
     await withStatus(async () => {
-      const updatedBill = await api.updatePropertyBill(bill.id, { amount_due: amountDue });
-      setPropertyBills((current) => current.map((item) => (item.id === bill.id ? updatedBill : item)));
-    }, "Bill amount updated.");
+      const updatedBill = await api.updatePropertyBill(id, { amount_due, due_date });
+      setPropertyBills((current) => current.map((bill) => (bill.id === id ? updatedBill : bill)));
+      setBillEdit(null);
+    }, "Bill updated. Bills outside the selected date range are hidden.");
   }
 
   async function generateTenantBills(propertyBillId: number) {
@@ -1405,7 +1409,14 @@ function App() {
                         </div>
                         {bill.notes && <p className="muted">{bill.notes}</p>}
                         <div className="actions">
-                          <button onClick={() => editPropertyBillAmount(bill)}>Edit Amount</button>
+                          <button
+                            disabled={loading}
+                            onClick={() =>
+                              setBillEdit({ id: bill.id, title: bill.title, amount_due: bill.amount_due, due_date: bill.due_date })
+                            }
+                          >
+                            Edit Bill
+                          </button>
                           <button onClick={() => updatePropertyBillStatus(bill, bill.status === "paid" ? "unpaid" : "paid")}>
                             Mark {bill.status === "paid" ? "Unpaid" : "Paid"}
                           </button>
@@ -1424,6 +1435,48 @@ function App() {
                   </div>
                 )}
               </section>
+
+              {billEdit && (
+                <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bill-edit-title">
+                  <form onSubmit={submitBillEdit} className="card form modal-card">
+                    <h2 id="bill-edit-title">Edit Bill</h2>
+                    <p>{billEdit.title}</p>
+                    <p className="muted">Updates only this property bill, not other recurring bills or existing tenant bills.</p>
+                    <label>
+                      Amount due
+                      <input
+                        autoFocus
+                        required
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        disabled={loading}
+                        value={billEdit.amount_due}
+                        onChange={(event) => setBillEdit({ ...billEdit, amount_due: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Due date
+                      <input
+                        required
+                        type="date"
+                        max="9999-12-31"
+                        disabled={loading}
+                        value={billEdit.due_date}
+                        onChange={(event) => setBillEdit({ ...billEdit, due_date: event.target.value })}
+                      />
+                    </label>
+                    <div className="modal-actions">
+                      <button className="primary" disabled={loading || !billEdit.amount_due || !billEdit.due_date}>
+                        Save Bill
+                      </button>
+                      <button type="button" className="secondary" disabled={loading} onClick={() => setBillEdit(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
 
               {billModalOpen && (
                 <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bill-modal-title">
