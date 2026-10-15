@@ -159,7 +159,9 @@ function splitMonthlyRent(monthlyRent: string, tenantCount: number): string[] {
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  // Invitation links carry the code in the URL fragment (#invite=...), which is never sent to the server.
+  const [inviteCode, setInviteCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("invite") ?? "");
+  const [authMode, setAuthMode] = useState<"login" | "register">(() => inviteCode ? "register" : "login");
   const [authForm, setAuthForm] = useState({
     email: "",
     full_name: "",
@@ -435,7 +437,13 @@ function App() {
     let pendingApproval = false;
     await withStatus(async () => {
       if (authMode === "register") {
-        const registered = await api.register(authForm);
+        const registered = await api.register(
+          inviteCode ? { ...authForm, role: "landlord", invite_code: inviteCode } : authForm,
+        );
+        if (inviteCode) {
+          setInviteCode("");
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        }
         if (!registered.is_active) {
           pendingApproval = true;
           setAuthMode("login");
@@ -754,7 +762,9 @@ function App() {
         <section className="auth-card">
           <p className="eyebrow">Rental Management</p>
           <h1>Manage leases, rental, and payments</h1>
-          <p className="muted">Sign in as a landlord to manage properties and tenants. New landlord accounts are activated by an administrator.</p>
+          <p className="muted">
+            Sign in as a landlord to manage properties and tenants.{!inviteCode && " New landlord accounts are activated by an administrator."}
+          </p>
           <div className="toggle">
             <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>
               Login
@@ -764,6 +774,9 @@ function App() {
             </button>
           </div>
           <form onSubmit={submitAuth} className="form">
+            {authMode === "register" && inviteCode && (
+              <p className="alert success">You are signing up as a landlord with an invitation. Your account is ready to use as soon as you create it.</p>
+            )}
             {authMode === "register" && (
               <>
                 <label>
@@ -774,7 +787,7 @@ function App() {
                     onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })}
                   />
                 </label>
-                <label>
+                {!inviteCode && <label>
                   Role
                   <select
                     value={authForm.role}
@@ -783,7 +796,7 @@ function App() {
                     <option value="landlord">Landlord</option>
                     <option value="tenant">Tenant</option>
                   </select>
-                </label>
+                </label>}
               </>
             )}
             <label>

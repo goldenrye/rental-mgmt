@@ -96,6 +96,24 @@ class AdminAuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class LandlordInvite(Base):
+    """Single-use landlord sign-up invitation. Only a SHA-256 hash of the code is stored."""
+
+    __tablename__ = "landlord_invites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    email: Mapped[Optional[str]] = mapped_column(String(255))
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    used_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    used_by: Mapped[Optional["User"]] = relationship(foreign_keys=[used_by_id])
+
+
 class LandlordProfile(Base):
     __tablename__ = "landlord_profiles"
 

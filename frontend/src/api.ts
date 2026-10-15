@@ -23,6 +23,17 @@ export type LandlordAccount = {
   created_at: string;
 };
 
+export type LandlordInvite = {
+  id: number;
+  email: string | null;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+  used_by_email: string | null;
+  revoked_at: string | null;
+  status: "active" | "used" | "expired" | "revoked";
+};
+
 export type RentalProperty = {
   id: number;
   landlord_id: number;
@@ -196,7 +207,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  register: (payload: { email: string; full_name: string; password: string; role: UserRole }) =>
+  register: (payload: { email: string; full_name: string; password: string; role: UserRole; invite_code?: string }) =>
     request<User>("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
   login: (payload: { email: string; password: string }) =>
     request<{ access_token: string; token_type: string }>("/auth/login", {
@@ -205,6 +216,10 @@ export const api = {
     }),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
   listLandlordAccounts: () => request<LandlordAccount[]>("/admin/landlords"),
+  listInvites: () => request<LandlordInvite[]>("/admin/invites"),
+  createInvite: (payload: { email?: string; expires_in_days: number }) =>
+    request<LandlordInvite & { code: string }>("/admin/invites", { method: "POST", body: JSON.stringify(payload) }),
+  revokeInvite: (inviteId: number) => request<void>(`/admin/invites/${inviteId}/revoke`, { method: "POST" }),
   setLandlordActive: (userId: number, is_active: boolean) =>
     request<void>(`/admin/landlords/${userId}/status`, { method: "PATCH", body: JSON.stringify({ is_active }) }),
   resetLandlordPassword: (userId: number, new_password: string) =>

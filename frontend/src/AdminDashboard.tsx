@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { api, storeToken } from "./api";
 import type { LandlordAccount, User } from "./api";
+import { LandlordInvites } from "./LandlordInvites";
 import { DataTable } from "./PaginatedEntries";
 
 const dateTime = (value: string | null) => value ? new Date(value).toLocaleString() : "-";
@@ -181,6 +182,7 @@ export function AdminDashboard({ user, onLogout, onUserChange }: {
           </form>
         </section>
       )}
+      {!user.password_change_required && <LandlordInvites />}
       {!user.password_change_required && (
         <section className="card">
           <div className="card-header">

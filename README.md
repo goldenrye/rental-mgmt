@@ -103,6 +103,26 @@ self-registration is rejected, because tenant records are created by landlords.
 Set `REGISTRATION_REQUIRES_APPROVAL=false` (for example in local development) to
 make sign-ups active immediately and allow tenant self-registration.
 
+### Inviting landlords
+
+To skip manual approval, send a landlord an invitation link. In the admin
+dashboard's **Landlord Invitations** card, optionally enter the landlord's email
+(then only that email can use the link), choose how long it stays valid (1–30
+days, default 7), and select **Create Invite Link**. Copy the link and send it
+yourself, by email or text; the app does not send email.
+
+The link opens the Register form with the invitation applied. Signing up with it
+creates an active landlord account that is signed in immediately. Each link
+works once. The card lists every invitation as Unused, Used (with who used it),
+Expired, or Revoked, and an unused link can be revoked. The link is shown only
+when it is created: the server stores only a SHA-256 hash of the code. The code is
+in the URL fragment (`#invite=...`), which browsers do not send to the server, so
+it does not appear in access logs.
+
+API: `POST /admin/invites` with optional `email` and `expires_in_days` returns the
+`code` once; `GET /admin/invites` lists invitations; `POST /admin/invites/{id}/revoke`
+revokes an unused one. `POST /auth/register` accepts an optional `invite_code`.
+
 The dedicated admin dashboard only manages landlord accounts. It lists active or
 deactivated status, last login, last activity, and active session counts, with
 search, filtering, and ten entries per page. Admins cannot access landlord

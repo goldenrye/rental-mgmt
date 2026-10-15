@@ -63,6 +63,7 @@ from app.schemas import (
 from app.security import decode_access_token, hash_password, verify_password
 from app.account_access import bootstrap_super_admin, ensure_access, issue_login, revoke_all_sessions, revoke_session
 from app.admin import router as admin_router
+from app.invites import claim_invite, find_usable_invite
 from app.login_throttle import authenticate, client_ip
 from app.tenant_charges import preview_tenant_charges
 from app.bill_extensions import confirm_extension, preview_extension, track_created_series
@@ -435,7 +436,15 @@ def health() -> dict[str, str]:
 @app.post("/auth/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def register(payload: UserCreate, db: DbSession) -> User:
     requires_approval = settings.registration_requires_approval
-    if requires_approval and payload.role != UserRole.landlord.value:
+    invite = None
+    if payload.invite_code:
+        if payload.role != UserRole.landlord.value:
+            raise HTTPException(status_code=400, detail="Invitations are for landlord accounts")
+        try:
+            invite = find_usable_invite(db, payload.invite_code, str(payload.email))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    elif requires_approval and payload.role != UserRole.landlord.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant self-registration is disabled")
     existing = db.scalar(select(User).where(User.email == payload.email))
     if existing:
@@ -453,7 +462,13 @@ def register(payload: UserCreate, db: DbSession) -> User:
 
     if payload.role == UserRole.landlord.value:
         db.add(LandlordProfile(user_id=user.id))
-        if requires_approval:
+        if invite is not None:
+            try:
+                claim_invite(db, invite, user)
+            except ValueError as exc:
+                db.rollback()
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        elif requires_approval:
             db.add(UserAccess(user_id=user.id, is_active=False))
     else:
         db.add(TenantProfile(user_id=user.id, full_name=user.full_name, email=user.email))

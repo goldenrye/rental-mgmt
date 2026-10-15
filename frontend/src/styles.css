@@ -135,6 +135,37 @@ td:first-child {
   font-size: 0.8rem;
 }
 
+.invite-card {
+  margin-bottom: 20px;
+}
+
+.invite-card .admin-filters {
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.invite-link {
+  border: 1px solid #dbe3f0;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.invite-link p {
+  margin: 0 0 8px;
+}
+
+.invite-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.invite-link-row input {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
 .app-shell {
   margin: 0 auto;
   max-width: 1440px;

@@ -35,6 +35,7 @@ class UserCreate(BaseModel):
     display_name: Optional[str] = Field(default=None, max_length=255)
     password: str = Field(min_length=8, max_length=72)
     role: Literal["landlord", "tenant"]
+    invite_code: Optional[str] = Field(default=None, max_length=128)
 
 
 class UserRead(BaseModel):
@@ -65,6 +66,28 @@ class LandlordAdminRead(BaseModel):
     active_sessions: int
     login_status: Literal["signed_in", "signed_out", "never_logged_in"]
     created_at: datetime
+
+
+class InviteCreate(BaseModel):
+    # When set, only this email can register with the invitation.
+    email: Optional[EmailStr] = None
+    expires_in_days: int = Field(default=7, ge=1, le=30)
+
+
+class InviteRead(BaseModel):
+    id: int
+    email: Optional[str]
+    created_at: datetime
+    expires_at: datetime
+    used_at: Optional[datetime]
+    used_by_email: Optional[str]
+    revoked_at: Optional[datetime]
+    status: Literal["active", "used", "expired", "revoked"]
+
+
+class InviteCreated(InviteRead):
+    # Returned only once, at creation; the server keeps just its hash.
+    code: str
 
 
 class LandlordStatusUpdate(BaseModel):

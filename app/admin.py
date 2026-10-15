@@ -1,13 +1,14 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import selectinload
 
 from app.account_access import ensure_access, revoke_all_sessions, utc
 from app.deps import DbSession, SuperAdmin
-from app.models import AdminAuditEvent, LoginSession, User, UserAccess, UserRole
-from app.schemas import AdminPasswordReset, LandlordAdminRead, LandlordStatusUpdate
+from app.invites import create_invite, invite_read
+from app.models import AdminAuditEvent, LandlordInvite, LoginSession, User, UserAccess, UserRole
+from app.schemas import AdminPasswordReset, InviteCreate, InviteCreated, InviteRead, LandlordAdminRead, LandlordStatusUpdate
 from app.security import hash_password
 
 
@@ -83,4 +84,30 @@ def reset_landlord_password(user_id: int, payload: AdminPasswordReset, db: DbSes
     revoke_all_sessions(db, user)
     db.add(AdminAuditEvent(actor_id=admin.id, target_id=user.id, action="reset_password"))
     db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/invites", response_model=InviteCreated, status_code=status.HTTP_201_CREATED)
+def create_landlord_invite(payload: InviteCreate, db: DbSession, admin: SuperAdmin) -> InviteCreated:
+    invite, code = create_invite(db, admin, str(payload.email) if payload.email else None, payload.expires_in_days)
+    return InviteCreated(**invite_read(invite).model_dump(), code=code)
+
+
+@router.get("/invites", response_model=list[InviteRead])
+def list_landlord_invites(db: DbSession, admin: SuperAdmin) -> list[InviteRead]:
+    invites = db.scalars(select(LandlordInvite).options(selectinload(LandlordInvite.used_by))
+                         .order_by(LandlordInvite.id.desc())).all()
+    return [invite_read(invite) for invite in invites]
+
+
+@router.post("/invites/{invite_id}/revoke", status_code=204)
+def revoke_landlord_invite(invite_id: int, db: DbSession, admin: SuperAdmin) -> Response:
+    invite = db.get(LandlordInvite, invite_id)
+    if invite is None:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    if invite.used_at:
+        raise HTTPException(status_code=409, detail="This invitation was already used")
+    if invite.revoked_at is None:
+        invite.revoked_at = datetime.now(timezone.utc)
+        db.commit()
     return Response(status_code=204)
