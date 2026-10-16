@@ -22,6 +22,7 @@ import { PaymentDialog } from "./PaymentDialog";
 import { DataTable } from "./PaginatedEntries";
 import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
 import { AdminDashboard } from "./AdminDashboard";
+import { EncryptionSettings } from "./EncryptionSettings";
 import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
 import { sortBillsByDueDate } from "./billSorting";
 import type { PropertyBillFilters } from "./propertyBillFilters";
@@ -888,7 +889,7 @@ function App() {
           <form onSubmit={submitProfileUpdate} className="card form modal-card">
             <div className="card-header">
               <h2 id="profile-modal-title">Edit Profile</h2>
-              <button type="button" className="secondary" onClick={closeProfileModal}>
+              <button type="button" className="secondary" disabled={loading} onClick={closeProfileModal}>
                 Close
               </button>
             </div>
@@ -910,6 +911,9 @@ function App() {
                 onChange={(event) => setProfileForm({ ...profileForm, display_name: event.target.value })}
               />
             </label>
+            {user.role === "landlord" && (
+              <EncryptionSettings user={user} loading={loading} onBusyChange={setLoading} onChanged={setUser} />
+            )}
             <div className="form-section">
               <h3>Change password</h3>
               <p className="muted">Leave password fields blank if you only want to update your names.</p>
@@ -946,7 +950,7 @@ function App() {
               <button disabled={loading} className="primary">
                 Save Profile
               </button>
-              <button type="button" className="secondary" onClick={closeProfileModal}>
+              <button type="button" className="secondary" disabled={loading} onClick={closeProfileModal}>
                 Cancel
               </button>
             </div>

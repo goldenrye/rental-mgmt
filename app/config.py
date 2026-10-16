@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr
 
 
 class Settings(BaseSettings):
@@ -9,6 +10,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/rental_mgmt.db"
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
+    data_encryption_master_key: SecretStr = SecretStr("")
+    data_encryption_key_file: str = str(Path(__file__).resolve().parent.parent / ".secrets" / "data-encryption.key")
     access_token_expire_minutes: int = 60 * 24
     super_admin_initial_password: str = ""
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"

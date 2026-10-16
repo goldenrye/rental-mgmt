@@ -9,6 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY scripts/manage_encryption.py ./scripts/manage_encryption.py
 
 EXPOSE 8000 8001
 

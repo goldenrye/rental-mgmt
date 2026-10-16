@@ -8,6 +8,7 @@ export type User = {
   role: UserRole;
   password_change_required: boolean;
   is_active: boolean;
+  encryption_enabled: boolean;
 };
 
 export type LandlordAccount = {
@@ -225,6 +226,8 @@ export const api = {
   resetLandlordPassword: (userId: number, new_password: string) =>
     request<void>(`/admin/landlords/${userId}/password`, { method: "POST", body: JSON.stringify({ new_password }) }),
   me: () => request<User>("/me"),
+  setEncryptionPreference: (enabled: boolean, current_password: string) =>
+    request<User>("/me/encryption", { method: "PUT", body: JSON.stringify({ enabled, current_password }) }),
   updateProfile: (payload: {
     full_name: string;
     display_name?: string | null;

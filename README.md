@@ -11,6 +11,7 @@ database backups.
 - [Production deployment](#production-deployment)
 - [Configuration reference](#configuration-reference)
 - [Administration](#administration)
+- [Database encryption](#database-encryption)
 - [Billing guide](#billing-guide)
 - [MCP server for AI agents](#mcp-server-for-ai-agents)
 - [API](#api)
@@ -69,7 +70,8 @@ the web app's tenant portal is only a placeholder.
 | `db`       | `postgres:16-alpine`          | Database                                                          |
 | `backup`   | `postgres:16-alpine`          | Periodic `pg_dump` (production only)                              |
 
-The API creates database tables at startup (there are no migrations yet). `mcp` waits
+The API creates new database tables at startup. Existing plaintext databases require
+the offline [encryption migration](#database-encryption) before upgrading. `mcp` waits
 for the `api` health check so the two never create the schema at the same time.
 
 Repository layout:
@@ -96,6 +98,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python scripts/init_env.py
+# Optional: only needed before landlords can enable encryption.
+# python -m scripts.manage_encryption init-key
 uvicorn app.main:app --reload
 ```
 
@@ -676,13 +680,165 @@ With `OPEN_REGISTRATION=true` (local development only), step 1 and the
 
 Admin endpoints require the super admin, after the initial password change.
 
-## Testing
+## Database encryption
 
-Backend tests use the standard library `unittest` with an in-memory SQLite database:
+Encryption is **opt-in per landlord and off by default**. In **Edit Profile >
+Data Encryption**, the landlord selects **Encrypt my rental data**, enters their
+current password, and clicks **Apply Encryption Setting**. This separately
+confirmed action converts existing records and controls all future writes.
+Saving other profile fields does not change encryption. Super admins and tenants
+cannot change this setting. Turning it off requires the same confirmation and
+converts the landlord's records back to readable plaintext.
+
+Unencrypted accounts require no encryption key. Their sensitive fields are stored
+as readable JSON in the storage payload column; normal billing and MCP behavior
+is unchanged. The payload column retains its historical `encrypted_data` name,
+but the `plain:v1:` prefix explicitly identifies unencrypted data. Encryption-enabled
+accounts reject plaintext payloads instead of silently accepting a downgrade.
+The owner preference and all of that owner's records change in one transaction,
+with writes serialized against preference changes. Failed conversions roll back.
+
+When enabled, sensitive rental records use AES-256-GCM before database storage.
+Each opted-in landlord has a separate random 256-bit data key. Only its wrapped (encrypted)
+form is stored in `landlord_encryption_keys`. API and MCP share a separate master
+key, supplied outside the database, to unwrap these keys. This is independent of
+JWT signing and login passwords. Nonces are random for every write; authentication
+binds ciphertext to the landlord, table, and record ID.
+
+Encrypted fields:
+
+- Property name, address, and description; unit name and description.
+- Managed tenant name, email, phone, and notes.
+- Lease rent and notes; each tenant's rent share and deposit.
+- Property bill title, amount, and notes.
+- Rental bill title, amount due, amount paid, and balance.
+- Payment amount and note.
+
+IDs, ownership links, dates, categories, recurrence, statuses, and account
+administration/authentication data (including login-account names and emails,
+invitations, and audit/session records) remain readable. New unassigned tenant
+profiles default to plaintext; previously encrypted ones keep their individual
+keys. Ownership transfers require a separate workflow and are intentionally
+rejected. Encrypted unit names use keyed lookup hashes for uniqueness; unencrypted
+ones use ordinary hashes. Protected values cannot be queried as individual SQL
+columns; API/MCP read them through the ORM after existing authorization checks.
+
+This protects logical database reads and new logical backups, **not application
+server compromise**. The application necessarily decrypts data in memory.
+The existing admin password-reset limitation is preserved: an administrator who
+resets a landlord's password can sign in as that landlord and access their data.
+Password resets revoke sessions but do not replace encryption keys.
+
+### Key setup
+
+This is optional for unencrypted accounts, but must be configured before anyone
+can enable encryption. Choose one source and use the same key for API and MCP:
+
+- `DATA_ENCRYPTION_MASTER_KEY`: URL-safe base64 encoding of 32 random bytes,
+  injected by a deployment secret manager. This takes precedence over the file.
+- `DATA_ENCRYPTION_KEY_FILE`: a private file containing that base64 value. Locally
+  it defaults to `.secrets/data-encryption.key` relative to the project root.
+  `python -m scripts.manage_encryption init-key` creates it with mode `0600` and
+  refuses to overwrite an existing file. `.secrets/` is git-ignored.
+
+Docker Compose mounts `.secrets` read-only at `/run/secrets` in API and MCP only,
+not the database or backup service. For a container-only installation, first
+create a private `.secrets` directory, then initialize the file with a one-off
+writable mount:
 
 ```bash
-python -m unittest discover -s scripts -p 'test_*.py'
+mkdir -m 700 .secrets
+docker compose build api
+docker compose run --rm --no-deps -v "$PWD/.secrets:/run/secrets:rw" api \
+  python -m scripts.manage_encryption init-key
 ```
+
+Back up the master key separately from database dumps with tightly restricted
+access. Restores need both the master key and the database's wrapped-key table.
+There is no password-based recovery for a lost encryption key. Never regenerate,
+replace, or delete an in-use key; automatic key rotation is not implemented.
+Missing, wrong, corrupted, or missing-per-landlord keys fail closed for encrypted
+data. A missing server key prevents enabling encryption without changing the
+landlord's existing plaintext data. Disabling encryption retains the wrapped
+key for backups and later re-enabling; do not delete the master key while any
+encrypted records or backups still need it.
+
+### Existing database migration
+
+Do this during a maintenance window. Do not run old and new application versions
+against the database together, and do not roll back to old code against the
+encrypted schema.
+
+1. Stop API, MCP, and other database writers.
+2. Take a consistent database backup and verify that it can be restored. Keep
+   this plaintext backup restricted; do not put it beside the encryption key.
+3. For databases with existing encrypted records, keep the current master key.
+   For plaintext-only databases, no encryption key is required for migration.
+4. Install updated dependencies, then run the migration and verification:
+
+```bash
+python -m scripts.manage_encryption migrate --confirm-backup
+python -m scripts.manage_encryption verify
+```
+
+For Docker, with the database running and API/MCP stopped:
+
+```bash
+docker compose run --rm --no-deps api python -m scripts.manage_encryption migrate --confirm-backup
+docker compose run --rm --no-deps api python -m scripts.manage_encryption verify
+```
+
+5. Start the updated API and MCP. Check landlord login, bills, payments, and MCP.
+
+This is a one-time **storage schema migration**, not landlord consent to encrypt.
+Legacy plaintext accounts remain unencrypted by default. Upgrades from the
+previous encryption-enabled release detect existing ciphertext and preserve
+encryption for those accounts. No user data is automatically encrypted merely
+because a server key is configured.
+
+Conversion of schema, records, and wrapped keys is transactional on SQLite and
+PostgreSQL. It preserves record IDs, ownership, dates, amounts, and payment links,
+and is idempotent. Unsupported/custom SQLite indexes or triggers are rejected
+rather than silently lost. Very old schemas should first be upgraded with the
+previous application release.
+
+SQLite conversion enables secure deletion, truncates WAL, and compacts the
+database afterward. If a reader blocks post-commit cleanup, stop it and rerun the
+migration; the committed encrypted rows are not rewritten. PostgreSQL conversion
+removes the plaintext columns logically, but old physical pages, WAL archives,
+replicas, snapshots, logs, and old backups can still contain plaintext. Plan
+PostgreSQL table compaction and historical-backup retention with your database
+operator. Encryption does not retroactively protect those historical copies.
+Likewise, enabling encryption from the profile only protects current logical
+records and future writes: physical old pages and backups still need separate
+retention/compaction handling.
+
+Startup adds the preference flag when needed, preserving existing encrypted
+accounts, but refuses legacy record schemas until the offline migration is run.
+Recovery from a failed transactional
+conversion leaves the original schema intact; after a successful conversion,
+rollback requires restoring the pre-migration backup with the previous release.
+
+## Testing
+
+Backend tests use the standard library `unittest` with an in-memory SQLite database
+and a fresh, process-local encryption key (never the deployment key):
+
+```bash
+python -m scripts.run_tests
+```
+
+SQLite encryption, migration rollback, ciphertext integrity, and existing
+API/MCP workflows are covered by this suite. The optional PostgreSQL integration
+test creates and removes a randomly named schema without touching existing
+tables. Run it against a test database whose account can create schemas:
+
+```bash
+TEST_ENCRYPTION_POSTGRES_URL="$TEST_DATABASE_URL" python -m scripts.run_tests
+```
+
+Without that variable the PostgreSQL test is skipped. Validate it on your
+PostgreSQL version before production migration.
 
 Frontend tests and type-checked build:
 

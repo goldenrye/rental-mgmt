@@ -9,11 +9,12 @@ import jwt
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.auth.provider import AccessToken
 from mcp.server.fastmcp import FastMCP
-from sqlalchemy import inspect, select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 from starlette.authentication import AuthCredentials
 
-from app.database import Base, SessionLocal, engine
+from app.database import SessionLocal, engine
+from app.encryption_migration import initialize_encrypted_database
 from app.models import (
     LandlordProfile,
     Lease,
@@ -52,32 +53,8 @@ mcp = FastMCP(
 
 
 def init_database() -> None:
-    """Create tables and apply lightweight compatibility migrations for local MCP use."""
-    Base.metadata.create_all(bind=engine)
-    with engine.begin() as connection:
-        lease_columns = {column["name"] for column in inspect(connection).get_columns("leases")}
-        if "unit_id" not in lease_columns:
-            connection.execute(text("ALTER TABLE leases ADD COLUMN unit_id INTEGER"))
-
-        lease_tenant_columns = {column["name"] for column in inspect(connection).get_columns("lease_tenants")}
-        if "monthly_rent" not in lease_tenant_columns:
-            connection.execute(text("ALTER TABLE lease_tenants ADD COLUMN monthly_rent NUMERIC(12, 2) NOT NULL DEFAULT 0"))
-        if "deposit" not in lease_tenant_columns:
-            connection.execute(text("ALTER TABLE lease_tenants ADD COLUMN deposit NUMERIC(12, 2) NOT NULL DEFAULT 0"))
-
-        rental_bill_columns = {column["name"] for column in inspect(connection).get_columns("rental_bills")}
-        if "title" not in rental_bill_columns:
-            connection.execute(text("ALTER TABLE rental_bills ADD COLUMN title VARCHAR(255) NOT NULL DEFAULT 'Monthly rent'"))
-        if "bill_type" not in rental_bill_columns:
-            connection.execute(text("ALTER TABLE rental_bills ADD COLUMN bill_type VARCHAR(32) NOT NULL DEFAULT 'rent'"))
-        if "recurrence" not in rental_bill_columns:
-            connection.execute(text("ALTER TABLE rental_bills ADD COLUMN recurrence VARCHAR(32)"))
-        if "period_start" not in rental_bill_columns:
-            connection.execute(text("ALTER TABLE rental_bills ADD COLUMN period_start DATE"))
-        if "period_end" not in rental_bill_columns:
-            connection.execute(text("ALTER TABLE rental_bills ADD COLUMN period_end DATE"))
-        if "source_property_bill_id" not in rental_bill_columns:
-            connection.execute(text("ALTER TABLE rental_bills ADD COLUMN source_property_bill_id INTEGER"))
+    """Reject missing keys and unmigrated schemas before serving MCP requests."""
+    initialize_encrypted_database(engine)
 
 
 def serialize_value(value: Any) -> Any:

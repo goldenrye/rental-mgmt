@@ -58,14 +58,13 @@ def series_context(db: Session, source: PropertyBill):
     bills = list(db.scalars(select(PropertyBill).where(
         PropertyBill.landlord_id == source.landlord_id,
         PropertyBill.property_id == source.property_id,
-        PropertyBill.title == source.title,
         PropertyBill.bill_type == source.bill_type,
         PropertyBill.recurrence == source.recurrence,
         PropertyBill.period_start == source.period_start,
         PropertyBill.period_end == source.period_end,
     ).order_by(PropertyBill.due_date, PropertyBill.id)))
     # SQLite's server timestamps omit fractional seconds, unlike bound datetimes.
-    bills = [bill for bill in bills if bill.created_at == source.created_at]
+    bills = [bill for bill in bills if bill.created_at == source.created_at and bill.title == source.title]
     slots = {(bill.due_date.year, bill.due_date.month) for bill in bills}
     claimed = db.scalar(select(PropertyBillSeriesMember.bill_id).where(
         PropertyBillSeriesMember.bill_id.in_([bill.id for bill in bills]),

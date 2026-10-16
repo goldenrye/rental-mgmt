@@ -176,7 +176,7 @@ class PopulatedLegacyBillTests(TenantChargePreviewTests):
         payment = apply_payment(self.db, rent[0], Decimal("50.00"), None, "Existing payment")
         self.db.commit()
         with self.engine.begin() as connection:
-            connection.exec_driver_sql("CREATE INDEX test_bill_title ON rental_bills(title)")
+            connection.exec_driver_sql("CREATE INDEX test_bill_due_date ON rental_bills(due_date)")
             before_bills = connection.exec_driver_sql("SELECT * FROM rental_bills ORDER BY id").fetchall()
             before_payments = connection.exec_driver_sql("SELECT * FROM payments ORDER BY id").fetchall()
         preview = self.preview()
@@ -187,7 +187,7 @@ class PopulatedLegacyBillTests(TenantChargePreviewTests):
             self.assertEqual(connection.exec_driver_sql("SELECT * FROM rental_bills ORDER BY id").fetchall(), before_bills)
             self.assertEqual(connection.exec_driver_sql("SELECT * FROM payments ORDER BY id").fetchall(), before_payments)
             self.assertIsNotNone(connection.exec_driver_sql(
-                "SELECT name FROM sqlite_master WHERE name='test_bill_title'"
+                "SELECT name FROM sqlite_master WHERE name='test_bill_due_date'"
             ).first())
         self.assertEqual(self.generate(self.preview()).status_code, 201)
         second = PropertyBill(

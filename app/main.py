@@ -6,14 +6,20 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import inspect, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.billing import apply_payment, generate_bills_for_lease, iter_months, money, month_window, monthly_due_date
 from app.config import get_settings
-from app.database import Base, SessionLocal, database_url, engine, migrate_legacy_bill_uniqueness
+from app.database import SessionLocal, database_url, engine
+from app.encryption import EncryptionError, unit_name_index
+from app.encryption_preferences import set_encryption_preference
+from app.schemas import EncryptionPreferenceUpdate
+from app.encryption_migration import initialize_encrypted_database
 from app.deps import BearerToken, CurrentUser, DbSession, Landlord
 from app.models import (
     LandlordProfile,
@@ -69,67 +75,24 @@ from app.bill_extensions import confirm_extension, preview_extension, track_crea
 from app.schemas import ConfirmPropertyBillExtension, ExtendPropertyBillRequest, PropertyBillExtensionPreview
 
 
-Base.metadata.create_all(bind=engine)
-migrate_legacy_bill_uniqueness(engine)
+initialize_encrypted_database(engine)
 with engine.begin() as connection:
     user_columns = {column["name"] for column in inspect(connection).get_columns("users")}
     if "display_name" not in user_columns:
         connection.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(255)"))
-    columns = {column["name"] for column in inspect(connection).get_columns("leases")}
-    if "unit_id" not in columns:
-        connection.execute(text("ALTER TABLE leases ADD COLUMN unit_id INTEGER"))
-    lease_tenant_columns = {column["name"] for column in inspect(connection).get_columns("lease_tenants")}
-    if "monthly_rent" not in lease_tenant_columns:
-        connection.execute(text("ALTER TABLE lease_tenants ADD COLUMN monthly_rent NUMERIC(12, 2) NOT NULL DEFAULT 0"))
-    if "deposit" not in lease_tenant_columns:
-        connection.execute(text("ALTER TABLE lease_tenants ADD COLUMN deposit NUMERIC(12, 2) NOT NULL DEFAULT 0"))
-    rental_bill_columns = {column["name"] for column in inspect(connection).get_columns("rental_bills")}
-    if "title" not in rental_bill_columns:
-        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN title VARCHAR(255) NOT NULL DEFAULT 'Monthly rent'"))
-    if "bill_type" not in rental_bill_columns:
-        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN bill_type VARCHAR(32) NOT NULL DEFAULT 'rent'"))
-    if "recurrence" not in rental_bill_columns:
-        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN recurrence VARCHAR(32)"))
-    if "period_start" not in rental_bill_columns:
-        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN period_start DATE"))
-    if "period_end" not in rental_bill_columns:
-        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN period_end DATE"))
-    if "source_property_bill_id" not in rental_bill_columns:
-        connection.execute(text("ALTER TABLE rental_bills ADD COLUMN source_property_bill_id INTEGER"))
-    connection.execute(
-        text(
-            """
-            UPDATE lease_tenants
-            SET monthly_rent = (
-                SELECT ROUND(leases.monthly_rent / tenant_counts.tenant_count, 2)
-                FROM leases
-                JOIN (
-                    SELECT lease_id, COUNT(*) AS tenant_count
-                    FROM lease_tenants
-                    GROUP BY lease_id
-                ) AS tenant_counts ON tenant_counts.lease_id = leases.id
-                WHERE leases.id = lease_tenants.lease_id
-            )
-            WHERE monthly_rent = 0
-              AND lease_id IN (
-                SELECT leases.id
-                FROM leases
-                JOIN (
-                    SELECT lease_id, COUNT(*) AS tenant_count
-                    FROM lease_tenants
-                    GROUP BY lease_id
-                ) AS tenant_counts ON tenant_counts.lease_id = leases.id
-                WHERE tenant_counts.tenant_count > 0
-              )
-            """
-        )
-    )
 
 settings = get_settings()
 with SessionLocal() as db:
     bootstrap_super_admin(db)
 app = FastAPI(title="Rental Management API", version="1.0.0")
 app.include_router(admin_router)
+
+
+@app.exception_handler(StaleDataError)
+async def encrypted_record_conflict(request: Request, exc: StaleDataError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": "This record changed in another request. Reload it and try again."})
+
+
 monthly_bill_scheduler_task: Optional[asyncio.Task[None]] = None
 app.add_middleware(
     CORSMiddleware,
@@ -518,6 +481,23 @@ def me(user: CurrentUser) -> User:
     return user
 
 
+@app.put("/me/encryption", response_model=UserRead)
+def update_encryption_preference(payload: EncryptionPreferenceUpdate, db: DbSession, user: CurrentUser, landlord: Landlord) -> User:
+    if not verify_password(payload.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    try:
+        set_encryption_preference(db, landlord.id, payload.enabled)
+        db.commit()
+    except EncryptionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Storage conversion is unavailable. Ask the administrator to check the encryption key and data integrity. Your setting was not changed.") from exc
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(user)
+    return user
+
+
 @app.patch("/me", response_model=UserRead)
 def update_profile(payload: ProfileUpdate, db: DbSession, user: CurrentUser) -> User:
     user.full_name = payload.full_name
@@ -598,7 +578,10 @@ def delete_property(property_id: int, db: DbSession, landlord: Landlord) -> Resp
 def create_unit(property_id: int, payload: UnitCreate, db: DbSession, landlord: Landlord) -> RentalUnit:
     get_property_or_404(db, landlord, property_id)
     duplicate = db.scalar(
-        select(RentalUnit).where(RentalUnit.property_id == property_id, RentalUnit.name == payload.name)
+        select(RentalUnit).where(
+            RentalUnit.property_id == property_id,
+            RentalUnit.name_index == unit_name_index(db.connection(), f"landlord:{landlord.id}", property_id, payload.name),
+        )
     )
     if duplicate:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unit name already exists for this property")
@@ -634,7 +617,7 @@ def update_unit(unit_id: int, payload: UnitUpdate, db: DbSession, landlord: Land
         duplicate = db.scalar(
             select(RentalUnit).where(
                 RentalUnit.property_id == unit.property_id,
-                RentalUnit.name == updates["name"],
+                RentalUnit.name_index == unit_name_index(db.connection(), f"landlord:{landlord.id}", unit.property_id, updates["name"]),
                 RentalUnit.id != unit.id,
             )
         )

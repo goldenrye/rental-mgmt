@@ -5,10 +5,14 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, UniqueConstraint, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.encrypted_models import EncryptedRecord, SensitiveField, install_encryption
+from app.encryption import key_table
+
+key_table.to_metadata(Base.metadata)
 
 
 class UserRole(str, Enum):
@@ -50,6 +54,10 @@ class User(Base):
     @property
     def is_active(self) -> bool:
         return self.access_state is None or self.access_state.is_active
+
+    @property
+    def encryption_enabled(self) -> bool:
+        return bool(self.landlord_profile and self.landlord_profile.encryption_enabled)
 
 
 class UserAccess(Base):
@@ -119,6 +127,7 @@ class LandlordProfile(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
+    encryption_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
     user: Mapped[User] = relationship(back_populates="landlord_profile")
     properties: Mapped[List["RentalProperty"]] = relationship(
@@ -128,16 +137,16 @@ class LandlordProfile(Base):
     leases: Mapped[List["Lease"]] = relationship(back_populates="landlord")
 
 
-class TenantProfile(Base):
+class TenantProfile(EncryptedRecord, Base):
     __tablename__ = "tenant_profiles"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), unique=True)
     landlord_id: Mapped[Optional[int]] = mapped_column(ForeignKey("landlord_profiles.id"), index=True)
-    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[Optional[str]] = mapped_column(String(255), index=True)
-    phone: Mapped[Optional[str]] = mapped_column(String(64))
-    notes: Mapped[Optional[str]] = mapped_column(Text)
+    full_name = SensitiveField(required=True)
+    email = SensitiveField()
+    phone = SensitiveField()
+    notes = SensitiveField()
 
     user: Mapped[Optional["User"]] = relationship(back_populates="tenant_profile")
     landlord: Mapped[Optional["LandlordProfile"]] = relationship(back_populates="tenants")
@@ -145,14 +154,14 @@ class TenantProfile(Base):
     bills: Mapped[List["RentalBill"]] = relationship(back_populates="tenant")
 
 
-class RentalProperty(Base):
+class RentalProperty(EncryptedRecord, Base):
     __tablename__ = "rental_properties"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), index=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    address: Mapped[str] = mapped_column(String(500), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text)
+    name = SensitiveField(required=True)
+    address = SensitiveField(required=True)
+    description = SensitiveField()
 
     landlord: Mapped["LandlordProfile"] = relationship(back_populates="properties")
     units: Mapped[List["RentalUnit"]] = relationship(back_populates="property", cascade="all, delete-orphan")
@@ -160,20 +169,21 @@ class RentalProperty(Base):
     property_bills: Mapped[List["PropertyBill"]] = relationship(back_populates="property", cascade="all, delete-orphan")
 
 
-class RentalUnit(Base):
+class RentalUnit(EncryptedRecord, Base):
     __tablename__ = "rental_units"
-    __table_args__ = (UniqueConstraint("property_id", "name", name="uq_property_unit_name"),)
+    __table_args__ = (UniqueConstraint("property_id", "name_index", name="uq_property_unit_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     property_id: Mapped[int] = mapped_column(ForeignKey("rental_properties.id"), index=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text)
+    name_index: Mapped[str] = mapped_column(String(64), nullable=False)
+    name = SensitiveField(required=True)
+    description = SensitiveField()
 
     property: Mapped["RentalProperty"] = relationship(back_populates="units")
     leases: Mapped[List["Lease"]] = relationship(back_populates="unit")
 
 
-class Lease(Base):
+class Lease(EncryptedRecord, Base):
     __tablename__ = "leases"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -182,8 +192,8 @@ class Lease(Base):
     unit_id: Mapped[Optional[int]] = mapped_column(ForeignKey("rental_units.id"), index=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
-    monthly_rent: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    notes: Mapped[Optional[str]] = mapped_column(Text)
+    monthly_rent = SensitiveField(money=True, required=True)
+    notes = SensitiveField()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     landlord: Mapped["LandlordProfile"] = relationship(back_populates="leases")
@@ -193,37 +203,37 @@ class Lease(Base):
     bills: Mapped[List["RentalBill"]] = relationship(back_populates="lease", cascade="all, delete-orphan")
 
 
-class LeaseTenant(Base):
+class LeaseTenant(EncryptedRecord, Base):
     __tablename__ = "lease_tenants"
     __table_args__ = (UniqueConstraint("lease_id", "tenant_id", name="uq_lease_tenant"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     lease_id: Mapped[int] = mapped_column(ForeignKey("leases.id"), index=True, nullable=False)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenant_profiles.id"), index=True, nullable=False)
-    monthly_rent: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
-    deposit: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    monthly_rent = SensitiveField(money=True, default=Decimal("0.00"), required=True)
+    deposit = SensitiveField(money=True, default=Decimal("0.00"), required=True)
 
     lease: Mapped["Lease"] = relationship(back_populates="tenants")
     tenant: Mapped["TenantProfile"] = relationship(back_populates="leases")
 
 
-class PropertyBill(Base):
+class PropertyBill(EncryptedRecord, Base):
     __tablename__ = "property_bills"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), index=True, nullable=False)
     property_id: Mapped[int] = mapped_column(ForeignKey("rental_properties.id"), index=True, nullable=False)
     bill_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    title = SensitiveField(required=True)
     recurrence: Mapped[str] = mapped_column(String(32), nullable=False, default="one_time")
     period_start: Mapped[Optional[date]] = mapped_column(Date)
     period_end: Mapped[Optional[date]] = mapped_column(Date)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
-    amount_due: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    amount_due = SensitiveField(money=True, required=True)
     status: Mapped[PropertyBillStatus] = mapped_column(String(32), nullable=False, default=PropertyBillStatus.unpaid.value)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    notes: Mapped[Optional[str]] = mapped_column(Text)
+    notes = SensitiveField()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     property: Mapped["RentalProperty"] = relationship(back_populates="property_bills")
@@ -250,7 +260,7 @@ class PropertyBillSeriesMember(Base):
     scheduled_date: Mapped[date] = mapped_column(Date, nullable=False)
 
 
-class RentalBill(Base):
+class RentalBill(EncryptedRecord, Base):
     __tablename__ = "rental_bills"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -258,7 +268,7 @@ class RentalBill(Base):
     lease_id: Mapped[int] = mapped_column(ForeignKey("leases.id"), index=True, nullable=False)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenant_profiles.id"), index=True, nullable=False)
     source_property_bill_id: Mapped[Optional[int]] = mapped_column(ForeignKey("property_bills.id"), index=True)
-    title: Mapped[str] = mapped_column(String(255), nullable=False, default="Monthly rent")
+    title = SensitiveField(default="Monthly rent", required=True)
     bill_type: Mapped[str] = mapped_column(String(32), nullable=False, default="rent")
     recurrence: Mapped[Optional[str]] = mapped_column(String(32))
     period_start: Mapped[Optional[date]] = mapped_column(Date)
@@ -266,9 +276,9 @@ class RentalBill(Base):
     bill_year: Mapped[int] = mapped_column(nullable=False)
     bill_month: Mapped[int] = mapped_column(nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
-    amount_due: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    amount_paid: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
-    balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    amount_due = SensitiveField(money=True, required=True)
+    amount_paid = SensitiveField(money=True, default=Decimal("0.00"), required=True)
+    balance = SensitiveField(money=True, required=True)
     status: Mapped[BillStatus] = mapped_column(String(32), nullable=False, default=BillStatus.open.value)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -285,16 +295,21 @@ class RentalBill(Base):
         return self.source_property_bill_id is not None
 
 
-class Payment(Base):
+class Payment(EncryptedRecord, Base):
     __tablename__ = "payments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     bill_id: Mapped[int] = mapped_column(ForeignKey("rental_bills.id"), index=True, nullable=False)
     landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), index=True, nullable=False)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenant_profiles.id"), index=True, nullable=False)
-    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    amount = SensitiveField(money=True, required=True)
     paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    note: Mapped[Optional[str]] = mapped_column(Text)
+    note = SensitiveField()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     bill: Mapped["RentalBill"] = relationship(back_populates="payments")
+
+
+ENCRYPTED_MODELS = (TenantProfile, RentalProperty, RentalUnit, Lease, LeaseTenant, PropertyBill, RentalBill, Payment)
+for encrypted_model in ENCRYPTED_MODELS:
+    install_encryption(encrypted_model)

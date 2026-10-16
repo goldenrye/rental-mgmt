@@ -46,6 +46,7 @@ class UserRead(BaseModel):
     role: str
     password_change_required: bool = False
     is_active: bool = True
+    encryption_enabled: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -128,6 +129,11 @@ class ProfileUpdate(BaseModel):
         if value is not None and len(value.encode("utf-8")) > 72:
             raise ValueError("Password must be at most 72 UTF-8 bytes")
         return value
+
+
+class EncryptionPreferenceUpdate(BaseModel):
+    enabled: bool
+    current_password: str = Field(min_length=1, max_length=72)
 
 
 class PropertyBase(BaseModel):

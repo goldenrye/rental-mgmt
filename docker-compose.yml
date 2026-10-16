@@ -1,6 +1,8 @@
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+psycopg://rental:rental@db:5432/rental_mgmt
   JWT_SECRET_KEY: ${JWT_SECRET_KEY:-replace-this-with-a-long-random-secret}
+  DATA_ENCRYPTION_MASTER_KEY: ${DATA_ENCRYPTION_MASTER_KEY:-}
+  DATA_ENCRYPTION_KEY_FILE: /run/secrets/data-encryption.key
 
 services:
   frontend:
@@ -16,6 +18,8 @@ services:
 
   api:
     build: .
+    volumes:
+      - ./.secrets:/run/secrets:ro
     ports:
       - "8000:8000"
     environment:
@@ -34,6 +38,8 @@ services:
 
   mcp:
     build: .
+    volumes:
+      - ./.secrets:/run/secrets:ro
     command: ["python", "-m", "app.mcp_server"]
     ports:
       - "8001:8001"
