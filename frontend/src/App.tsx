@@ -83,7 +83,7 @@ type LeaseForm = {
 
 type ManualBillForm = {
   property_id: string;
-  bill_type: "electricity" | "water" | "mortgage" | "insurance" | "property_tax" | "maintenance" | "other";
+  bill_type: PropertyBill["bill_type"];
   title: string;
   amount_due: string;
   recurrence: "one_time" | "monthly" | "bi_monthly" | "quarterly" | "semi_annually" | "annually" | "custom_period";
@@ -1820,13 +1820,9 @@ function App() {
                           })
                         }
                       >
-                        <option value="electricity">Electricity</option>
-                        <option value="water">Water</option>
-                        <option value="mortgage">Mortgage</option>
-                        <option value="insurance">Insurance</option>
-                        <option value="property_tax">Property Tax</option>
-                        <option value="maintenance">Maintenance</option>
-                        <option value="other">Other</option>
+                        {Object.entries(billCategoryLabels).map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
                       </select>
                     </label>
                     <label>

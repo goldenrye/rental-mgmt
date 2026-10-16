@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { billFilterError, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./src/propertyBillFilters.ts";
+import { billCategoryLabels, billFilterError, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./src/propertyBillFilters.ts";
 
 const bills = [
   { id: 1, property_id: 1, bill_type: "water", due_date: "2026-10-01", status: "unpaid", recurrence: "bi_monthly", generated_at: null },
@@ -9,6 +9,24 @@ const bills = [
   { id: 4, property_id: 2, bill_type: "water", due_date: "2026-10-01", status: "unpaid", recurrence: "one_time", generated_at: null },
 ];
 const filteredIds = (filters = {}) => filterPropertyBills(bills, { ...emptyPropertyBillFilters, ...filters }).map((bill) => bill.id);
+
+test("new bill categories have display labels and filter independently", () => {
+  const categories = {
+    credit_card: "Credit Card",
+    communication: "Communication",
+    garbage: "Garbage",
+    hoa: "HOA",
+    management: "Management",
+  };
+  const added = Object.keys(categories).map((bill_type, index) => ({ ...bills[0], id: index + 5, bill_type }));
+  for (const bill of added) {
+    assert.equal(billCategoryLabels[bill.bill_type], categories[bill.bill_type]);
+    assert.deepEqual(
+      filterPropertyBills([...bills, ...added], { ...emptyPropertyBillFilters, bill_type: bill.bill_type }),
+      [bill],
+    );
+  }
+});
 
 test("quarterly bills have a label and can be filtered independently", () => {
   const quarterlyBill = { ...bills[0], id: 5, recurrence: "quarterly" };

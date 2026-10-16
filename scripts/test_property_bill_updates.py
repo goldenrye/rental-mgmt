@@ -70,6 +70,44 @@ class PropertyBillUpdateTests(unittest.TestCase):
         listed = self.client.get("/property-bills").json()
         self.assertEqual(next(bill for bill in listed if bill["id"] == self.bill_id)["due_date"], "2026-02-15")
 
+    def test_new_categories_can_be_created_updated_and_listed(self):
+        for category in ("credit_card", "communication", "garbage", "hoa", "management"):
+            with self.subTest(category=category):
+                response = self.client.post("/property-bills", json={
+                    "property_id": self.bills[0].property_id,
+                    "bill_type": category,
+                    "title": f"Test {category}",
+                    "amount_due": "75.25",
+                    "recurrence": "one_time",
+                    "due_date": "2026-10-31",
+                })
+                self.assertEqual(response.status_code, 201, response.text)
+                created = response.json()[0]
+                self.assertEqual(created["bill_type"], category)
+                updated = self.client.patch(
+                    f"/property-bills/{self.bill_id}", json={"bill_type": category},
+                )
+                self.assertEqual(updated.status_code, 200, updated.text)
+                self.assertEqual(updated.json()["bill_type"], category)
+                self.db.expire_all()
+                self.assertEqual(self.db.get(PropertyBill, created["id"]).bill_type, category)
+                self.assertEqual(self.bills[0].bill_type, category)
+                listed = self.client.get("/property-bills").json()
+                self.assertEqual(next(bill for bill in listed if bill["id"] == created["id"])["bill_type"], category)
+
+    def test_unknown_category_is_rejected_on_create_and_update(self):
+        response = self.client.post("/property-bills", json={
+            "property_id": self.bills[0].property_id, "bill_type": "unknown",
+            "title": "Invalid category", "amount_due": "10.00",
+            "recurrence": "one_time", "due_date": "2026-10-31",
+        })
+        self.assertEqual(response.status_code, 422)
+        response = self.client.patch(f"/property-bills/{self.bill_id}", json={"bill_type": "unknown"})
+        self.assertEqual(response.status_code, 422)
+        self.db.expire_all()
+        self.assertEqual(self.bills[0].bill_type, "water")
+        self.assertEqual(len(self.client.get("/property-bills").json()), 2)
+
     def test_invalid_dates_are_rejected(self):
         for value in ("", "not-a-date", "2026-02-30"):
             with self.subTest(value=value):

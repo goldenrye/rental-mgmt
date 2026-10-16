@@ -7,6 +7,11 @@ export const billCategoryLabels: Record<PropertyBill["bill_type"], string> = {
   insurance: "Insurance",
   property_tax: "Property Tax",
   maintenance: "Maintenance",
+  credit_card: "Credit Card",
+  communication: "Communication",
+  garbage: "Garbage",
+  hoa: "HOA",
+  management: "Management",
   other: "Other",
 };
 
