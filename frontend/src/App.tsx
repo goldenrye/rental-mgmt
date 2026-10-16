@@ -23,6 +23,7 @@ import { DataTable } from "./PaginatedEntries";
 import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
 import { AdminDashboard } from "./AdminDashboard";
 import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
+import { sortBillsByDueDate } from "./billSorting";
 import type { PropertyBillFilters } from "./propertyBillFilters";
 import "./styles.css";
 
@@ -297,7 +298,7 @@ function App() {
     [leaseForm.tenants, tenants],
   );
   const visibleBills = useMemo(
-    () => bills.filter((bill) => showHistoricPaidBills || bill.status !== "paid"),
+    () => sortBillsByDueDate(bills.filter((bill) => showHistoricPaidBills || bill.status !== "paid")),
     [bills, showHistoricPaidBills],
   );
   const hiddenPaidBillCount = bills.length - visibleBills.length;
@@ -314,7 +315,7 @@ function App() {
     [payments, selectedPaymentTenantId],
   );
   const visiblePropertyBills = useMemo(
-    () => filterPropertyBills(propertyBills, billFilter),
+    () => sortBillsByDueDate(filterPropertyBills(propertyBills, billFilter)),
     [billFilter, propertyBills],
   );
   const activeBillFilters = [
