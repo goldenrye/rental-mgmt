@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { billCategoryLabels, billFilterError, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./src/propertyBillFilters.ts";
+import { billCategoryLabels, billFilterError, billRecurrenceLabels, defaultPropertyBillFilters, emptyPropertyBillFilters, filterPropertyBills } from "./src/propertyBillFilters.ts";
 
 const bills = [
   { id: 1, property_id: 1, bill_type: "water", due_date: "2026-10-01", status: "unpaid", recurrence: "bi_monthly", generated_at: null },
@@ -9,6 +9,34 @@ const bills = [
   { id: 4, property_id: 2, bill_type: "water", due_date: "2026-10-01", status: "unpaid", recurrence: "one_time", generated_at: null },
 ];
 const filteredIds = (filters = {}) => filterPropertyBills(bills, { ...emptyPropertyBillFilters, ...filters }).map((bill) => bill.id);
+
+test("default filters show only unpaid bills due in the current local month", () => {
+  const filters = defaultPropertyBillFilters(new Date(2026, 9, 21));
+  assert.deepEqual(filters, {
+    ...emptyPropertyBillFilters, start: "2026-10-01", end: "2026-10-31", status: "unpaid",
+  });
+  const candidates = [
+    ...bills,
+    { ...bills[0], id: 5, due_date: "2026-09-30" },
+    { ...bills[0], id: 6, due_date: "2026-11-01" },
+    { ...bills[0], id: 7, due_date: "2026-10-31" },
+  ];
+  assert.deepEqual(filterPropertyBills(candidates, filters).map((bill) => bill.id), [1, 4, 7]);
+  assert.equal(emptyPropertyBillFilters.status, "");
+});
+
+test("default filters handle leap years and year boundaries", () => {
+  for (const [date, start, end] of [
+    [new Date(2024, 1, 15), "2024-02-01", "2024-02-29"],
+    [new Date(2026, 1, 15), "2026-02-01", "2026-02-28"],
+    [new Date(2026, 11, 31), "2026-12-01", "2026-12-31"],
+    [new Date(2027, 0, 1), "2027-01-01", "2027-01-31"],
+  ]) {
+    assert.deepEqual(defaultPropertyBillFilters(date), {
+      ...emptyPropertyBillFilters, start, end, status: "unpaid",
+    });
+  }
+});
 
 test("new bill categories have display labels and filter independently", () => {
   const categories = {

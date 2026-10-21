@@ -23,7 +23,7 @@ import { DataTable } from "./PaginatedEntries";
 import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
 import { AdminDashboard } from "./AdminDashboard";
 import { EncryptionSettings } from "./EncryptionSettings";
-import { billCategoryLabels, billRecurrenceLabels, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
+import { billCategoryLabels, billRecurrenceLabels, defaultPropertyBillFilters, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
 import { sortBillsByDueDate } from "./billSorting";
 import type { PropertyBillFilters } from "./propertyBillFilters";
 import "./styles.css";
@@ -134,21 +134,6 @@ const emptyProfileForm: ProfileForm = {
   confirm_password: "",
 };
 
-function formatDateInput(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function currentMonthRange() {
-  const today = new Date();
-  return {
-    start: formatDateInput(new Date(today.getFullYear(), today.getMonth(), 1)),
-    end: formatDateInput(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
-  };
-}
-
 function splitMonthlyRent(monthlyRent: string, tenantCount: number): string[] {
   if (tenantCount <= 0) {
     return [];
@@ -179,7 +164,7 @@ function App() {
   const [propertyBills, setPropertyBills] = useState<PropertyBill[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [showHistoricPaidBills, setShowHistoricPaidBills] = useState(false);
-  const [billFilter, setBillFilter] = useState<PropertyBillFilters>(() => ({ ...emptyPropertyBillFilters, ...currentMonthRange() }));
+  const [billFilter, setBillFilter] = useState<PropertyBillFilters>(() => defaultPropertyBillFilters());
   const [billFilterOpen, setBillFilterOpen] = useState(false);
   const billFilterButtonRef = useRef<HTMLButtonElement>(null);
   const [propertyForm, setPropertyForm] = useState<PropertyForm>(emptyProperty);
@@ -485,7 +470,7 @@ function App() {
     setExtensionBill(null);
     setTenantChargeBillId(null);
     setBillFilterOpen(false);
-    setBillFilter({ ...emptyPropertyBillFilters, ...currentMonthRange() });
+    setBillFilter(defaultPropertyBillFilters());
     setProfileMenuOpen(false);
     setTenantDropdownOpen(false);
     setAuthForm((current) => ({ ...current, password: "" }));
@@ -1605,8 +1590,8 @@ function App() {
                     </svg>
                     Filters{activeBillFilters.length > 0 ? ` (${activeBillFilters.length})` : ""}
                   </button>
-                  <button className="secondary" onClick={() => setBillFilter({ ...emptyPropertyBillFilters, ...currentMonthRange() })}>
-                    Current Month
+                  <button className="secondary" onClick={() => setBillFilter(defaultPropertyBillFilters())}>
+                    This Month Unpaid
                   </button>
                   <button
                     className="secondary"

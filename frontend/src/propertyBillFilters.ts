@@ -47,6 +47,18 @@ export const emptyPropertyBillFilters: PropertyBillFilters = {
   tenant_bills: "",
 };
 
+export function defaultPropertyBillFilters(today = new Date()): PropertyBillFilters {
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const lastDay = new Date(year, today.getMonth() + 1, 0).getDate();
+  return {
+    ...emptyPropertyBillFilters,
+    start: `${year}-${month}-01`,
+    end: `${year}-${month}-${lastDay}`,
+    status: "unpaid",
+  };
+}
+
 export function billFilterError(filters: PropertyBillFilters): string {
   if (filters.start && filters.end && filters.start > filters.end) {
     return "End date must be on or after start date.";
