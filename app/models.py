@@ -218,6 +218,18 @@ class Lease(EncryptedRecord, Base):
     unit: Mapped[Optional["RentalUnit"]] = relationship(back_populates="leases")
     tenants: Mapped[List["LeaseTenant"]] = relationship(back_populates="lease", cascade="all, delete-orphan")
     bills: Mapped[List["RentalBill"]] = relationship(back_populates="lease", cascade="all, delete-orphan")
+    billing_runs: Mapped[List["RentBillingRun"]] = relationship(back_populates="lease", cascade="all, delete-orphan")
+
+
+class RentBillingRun(Base):
+    """Durable completion marker; kept even if generated bills are deleted."""
+
+    __tablename__ = "rent_billing_runs"
+    lease_id: Mapped[int] = mapped_column(ForeignKey("leases.id"), primary_key=True)
+    bill_year: Mapped[int] = mapped_column(primary_key=True)
+    bill_month: Mapped[int] = mapped_column(primary_key=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    lease: Mapped["Lease"] = relationship(back_populates="billing_runs")
 
 
 class LeaseTenant(EncryptedRecord, Base):

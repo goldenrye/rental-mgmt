@@ -440,10 +440,28 @@ Landlords create tenant records with `POST /tenants`, which does not accept a
 
 ### Rent bills
 
-- Rent bills cover the current month only. They are generated automatically on the
-  1st of each month by a scheduler inside the API, or on demand with
-  **Generate Current Rental** (`POST /bills/generate-current-month` or
-  `POST /leases/{id}/generate-bills`).
+- Rent bills cover the current month only. The API checks immediately at startup
+  and every hour, including after downtime later in the month. No manual
+  generation button is needed. The server's calendar/time zone determines the month.
+- Each lease is committed separately; a failed lease or database scan is logged
+  and retried on the next check. Generation runs outside the API event loop.
+  Multiple workers and manual API generation serialize on a database lease lock
+  to prevent duplicate automatic rent.
+- A durable `rent_billing_runs` completion marker is committed with the bills.
+  Completed months are not regenerated on restart, including rent intentionally
+  deleted afterward. Creating/updating a lease still generates its current rent.
+  Existing bills and payment balances are preserved.
+- Restart the API after deploying this change; startup creates the additive
+  completion table. On the first run, existing current-month rent is recognized
+  and missing rent is generated. Historical deleted bills cannot be distinguished
+  from missing bills before completion tracking existed.
+- This does not backfill previous months or generate future-month bills. If the
+  service was unavailable for a whole month, that older month needs explicit
+  reconciliation. The existing owner-scoped
+  `POST /bills/generate-current-month` and `POST /leases/{id}/generate-bills`
+  endpoints remain for integrations. Monitor API logs for `Automatic rent failed`
+  and `Automatic rent scan failed`; retries cannot fix persistent database or
+  encryption-key configuration errors without operator intervention.
 - When a lease starts or ends mid-month, the bill is prorated by the number of lease
   days in that month.
 - A lease can have several tenants. The landlord sets each tenant's monthly rent share

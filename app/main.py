@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.billing import apply_payment, generate_bills_for_lease, iter_months, money, month_window, monthly_due_date
+from app.rent_scheduler import monthly_bill_scheduler
 from app.config import get_settings
 from app.database import SessionLocal, database_url, engine
 from app.encryption import EncryptionError, unit_name_index
@@ -175,20 +176,6 @@ def _manual_bill_due_dates(payload: ManualBillCreate | PropertyBillCreate) -> li
     if payload.recurrence == "annually":
         return iter_annual_dates(payload.due_date, payload.period_end)
     return [payload.due_date]
-
-
-async def monthly_bill_scheduler() -> None:
-    last_run: Optional[date] = None
-    while True:
-        today = date.today()
-        if today.day == 1 and last_run != today:
-            with SessionLocal() as db:
-                bills = generate_monthly_bills(db, today)
-                db.commit()
-                if bills:
-                    print(f"Generated {len(bills)} monthly rental bill(s) for {today:%Y-%m}.")
-            last_run = today
-        await asyncio.sleep(60 * 60)
 
 
 @app.on_event("startup")

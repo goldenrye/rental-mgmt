@@ -4,10 +4,10 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.models import BillStatus, Lease, Payment, RentalBill
+from app.models import BillStatus, Lease, Payment, RentalBill, RentBillingRun
 
 
 TWOPLACES = Decimal("0.01")
@@ -73,8 +73,24 @@ def refresh_bill_status(bill: RentalBill) -> None:
         bill.status = BillStatus.open.value
 
 
-def generate_bills_for_lease(db: Session, lease: Lease, billing_date: Optional[date] = None) -> list[RentalBill]:
+def generate_bills_for_lease(
+    db: Session, lease: Lease, billing_date: Optional[date] = None, *, automatic: bool = False,
+) -> list[RentalBill]:
     billing_date = billing_date or date.today()
+    db.flush()
+    # Serialize all generation paths for a lease, including concurrent API workers.
+    # SQLite needs a writer lock before the read; PostgreSQL uses a row lock.
+    if db.get_bind().dialect.name == "sqlite":
+        db.execute(update(Lease.__table__).where(Lease.id == lease.id).values(id=Lease.id))
+    locked = db.scalar(select(Lease.id).where(Lease.id == lease.id).with_for_update())
+    if locked is None:
+        return []
+    db.refresh(lease)
+    db.expire(lease, ["tenants"])
+    run_id = (lease.id, billing_date.year, billing_date.month)
+    completed = db.get(RentBillingRun, run_id)
+    if automatic and completed is not None:
+        return []
     period_start, period_end = month_window(billing_date)
     if lease.start_date > period_end or lease.end_date < period_start:
         return []
@@ -123,6 +139,8 @@ def generate_bills_for_lease(db: Session, lease: Lease, billing_date: Optional[d
         db.add(bill)
         bills.append(bill)
 
+    if completed is None:
+        db.add(RentBillingRun(lease_id=lease.id, bill_year=billing_date.year, bill_month=billing_date.month))
     db.flush()
     return bills
 

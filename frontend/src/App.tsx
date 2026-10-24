@@ -728,13 +728,6 @@ function App() {
     closeTenantChargeDialog();
   }
 
-  async function generateBills() {
-    await withStatus(async () => {
-      await api.generateCurrentBills();
-      setBills(await api.listBills());
-    }, "Rental generated for currently active leases.");
-  }
-
   async function recordPayment(billId: number) {
     const payment = paymentByBill[billId] ?? { amount: "", paid_at: "", note: "" };
     await withStatus(async () => {
@@ -1956,11 +1949,9 @@ function App() {
                     />
                     Show historic paid rental
                   </label>
-                  <button className="primary" disabled={loading} onClick={generateBills}>
-                    Generate Current Rental
-                  </button>
                 </div>
               </div>
+              <p className="help-text">Current-month rent is generated automatically for eligible leases.</p>
               {!showHistoricPaidBills && hiddenPaidBillCount > 0 && (
                 <p className="help-text">{hiddenPaidBillCount} paid rental record(s) hidden. Enable "Show historic paid rental" to view them.</p>
               )}

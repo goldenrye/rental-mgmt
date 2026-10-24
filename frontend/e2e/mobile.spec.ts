@@ -85,6 +85,10 @@ test("all landlord sections, nested units, pagination and forms remain accessibl
 
   for (const name of ["Tenants", "Leases", "Rental & Payments", "Property Bills"]) {
     await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name, exact: true }).click();
+    if (name === "Rental & Payments") {
+      await expect(page.getByRole("button", { name: "Generate Current Rental" })).toHaveCount(0);
+      await expect(page.getByText("Current-month rent is generated automatically for eligible leases.")).toBeVisible();
+    }
     await noOverflow(page);
   }
   await expect(page.getByText("Water bill", { exact: true })).toBeVisible();
