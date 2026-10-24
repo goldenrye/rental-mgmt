@@ -1,3 +1,5 @@
+import { runtimeConfig, sessionStorage } from "./platform";
+
 export type UserRole = "landlord" | "tenant" | "super_admin";
 
 export type User = {
@@ -157,19 +159,24 @@ export type TenantChargePreview = {
   tenants: { tenant_id: number; lease_id: number; tenant_name: string; amount_due: string }[];
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
-const TOKEN_KEY = "rental_mgmt_token";
+const API_BASE_URL = runtimeConfig.apiBaseURL;
 
 export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.get();
 }
 
-export function storeToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+export async function storeToken(token: string): Promise<void> {
+  await sessionStorage.set(token);
 }
 
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+export async function clearToken(): Promise<void> {
+  await sessionStorage.clear();
+}
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -186,6 +193,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
+    cache: "no-store",
   });
 
   if (!response.ok) {
@@ -198,7 +206,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       message = await response.text();
     }
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) {

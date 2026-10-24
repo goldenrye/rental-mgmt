@@ -11,6 +11,7 @@ import {
   User,
   UserRole,
   api,
+  ApiError,
   clearToken,
   getStoredToken,
   storeToken,
@@ -23,10 +24,15 @@ import { DataTable } from "./PaginatedEntries";
 import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
 import { AdminDashboard } from "./AdminDashboard";
 import { EncryptionSettings } from "./EncryptionSettings";
+import { AppNavigation } from "./AppNavigation";
+import type { Tab } from "./AppNavigation";
+import { InvitationEntry } from "./InvitationEntry";
+import { isNative } from "./platform";
 import { billCategoryLabels, billRecurrenceLabels, defaultPropertyBillFilters, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
 import { sortBillsByDueDate } from "./billSorting";
 import type { PropertyBillFilters } from "./propertyBillFilters";
 import "./styles.css";
+import "./mobile.css";
 
 function BillActionIcon({ name }: { name: "details" | "edit" | "paid" | "unpaid" | "extend" | "generate" | "delete" }) {
   const paths: Record<typeof name, ReactNode> = {
@@ -44,15 +50,6 @@ function BillActionIcon({ name }: { name: "details" | "edit" | "paid" | "unpaid"
     </svg>
   );
 }
-
-type Tab = "properties" | "tenants" | "leases" | "bills" | "bill";
-const tabLabels: Record<Tab, string> = {
-  properties: "Properties & Units",
-  tenants: "tenants",
-  leases: "leases",
-  bills: "rental",
-  bill: "bill",
-};
 
 type PropertyForm = {
   name: string;
@@ -326,13 +323,26 @@ function App() {
     }
     api
       .me()
-      .then((currentUser) => {
+      .then(async (currentUser) => {
         setUser(currentUser);
         if (currentUser.role === "landlord") {
-          void loadLandlordData();
+          await loadLandlordData();
         }
       })
-      .catch(() => clearToken());
+      .catch(async (err) => {
+        if (err instanceof ApiError && [401, 403].includes(err.status)) {
+          setUser(null);
+          try {
+            await clearToken();
+          } catch {
+            setError("Your session expired, but secure storage could not be cleared. Unlock your device and restart the app.");
+            return;
+          }
+          setError("Your session has expired. Please sign in again.");
+        } else {
+          setError("Unable to load your account. Check your connection and try again.");
+        }
+      });
   }, []);
 
   async function withStatus(action: () => Promise<void>, successMessage?: string) {
@@ -430,7 +440,7 @@ function App() {
         window.history.replaceState(null, "", window.location.pathname + window.location.search);
       }
       const token = await api.login({ email: authForm.email, password: authForm.password });
-      storeToken(token.access_token);
+      await storeToken(token.access_token);
       const currentUser = await api.me();
       setUser(currentUser);
       if (currentUser.role === "landlord") {
@@ -446,7 +456,12 @@ function App() {
     } catch {
       revoked = false;
     }
-    clearToken();
+    let storageCleared = true;
+    try {
+      await clearToken();
+    } catch {
+      storageCleared = false;
+    }
     setUser(null);
     setProperties([]);
     setUnits([]);
@@ -474,6 +489,7 @@ function App() {
     setProfileMenuOpen(false);
     setTenantDropdownOpen(false);
     setAuthForm((current) => ({ ...current, password: "" }));
+    setError(storageCleared ? "" : "Secure storage could not be cleared. Unlock your device and restart the app before signing in again.");
     setMessage(revoked ? "Signed out." : "Signed out locally. The server could not confirm session revocation.");
   }
 
@@ -527,7 +543,7 @@ function App() {
       });
       if (profileForm.new_password) {
         const token = await api.login({ email: updatedUser.email, password: profileForm.new_password });
-        storeToken(token.access_token);
+        await storeToken(token.access_token);
       }
       setUser(updatedUser);
       closeProfileModal();
@@ -772,6 +788,9 @@ function App() {
                 required
                 type={authMode === "register" ? "email" : "text"}
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 value={authForm.email}
                 onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
               />
@@ -792,6 +811,11 @@ function App() {
               {loading ? "Working..." : authMode === "register" ? "Create Account" : "Login"}
             </button>
           </form>
+          {isNative && <InvitationEntry onApply={(code) => {
+            setInviteCode(code);
+            setAuthMode("register");
+            setError("");
+          }} />}
           <Status error={error} message={message} />
         </section>
       </main>
@@ -806,13 +830,19 @@ function App() {
   const profileInitial = profileDisplayName.charAt(0).toUpperCase();
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${user.role === "landlord" ? " has-bottom-nav" : ""}`}>
       <header className="topbar">
         <div className="header-greeting">
           <p className="eyebrow">Rental Management</p>
           <h1>Welcome, {profileDisplayName}</h1>
           <p className="muted">{user.role === "landlord" ? "Landlord dashboard" : "Tenant account"}</p>
         </div>
+        <div className="header-actions">
+        {user.role === "landlord" && (
+          <button type="button" className="secondary refresh-data" disabled={loading} onClick={() => void withStatus(loadLandlordData, "Data refreshed.")}>
+            Refresh
+          </button>
+        )}
         <div className="profile-menu" ref={profileMenuRef}>
           <button
             type="button"
@@ -866,6 +896,7 @@ function App() {
               </button>
             </section>
           )}
+        </div>
         </div>
       </header>
 
@@ -952,13 +983,7 @@ function App() {
         </section>
       ) : (
         <>
-          <nav className="tabs">
-            {(["properties", "tenants", "leases", "bills", "bill"] as Tab[]).map((tab) => (
-              <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>
-                {tabLabels[tab]}
-              </button>
-            ))}
-          </nav>
+          <AppNavigation activeTab={activeTab} onChange={setActiveTab} />
 
           {activeTab === "properties" && (
             <div className="property-unit-page">

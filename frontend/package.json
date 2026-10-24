@@ -7,13 +7,27 @@
     "dev": "vite --host 0.0.0.0",
     "test": "node --experimental-strip-types --test *.test.mjs",
     "build": "tsc && vite build",
+    "ios:sync": "tsc && vite build --mode ios && cap sync ios",
+    "ios:open": "cap open ios",
+    "test:mobile": "playwright test",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
+    "@capacitor/clipboard": "^8.0.1",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
+    "@capacitor/keyboard": "^8.0.6",
     "react": "latest",
     "react-dom": "latest"
   },
+  "overrides": {
+    "xcode": {
+      "uuid": "^11.1.1"
+    }
+  },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
+    "@playwright/test": "^1.64.1",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",

@@ -1,0 +1,170 @@
+import { test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+async function mockAPI(page: Page, admin = false) {
+  const now = new Date();
+  const dueDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-15`;
+  const landlord = { id: 1, email: "owner@example.test", full_name: "Test Owner", role: "landlord", is_active: true, password_change_required: false, encryption_enabled: false };
+  const user = admin ? { ...landlord, role: "super_admin", full_name: "Admin", email: "admin" } : landlord;
+  const properties = Array.from({ length: 11 }, (_, i) => ({ id: i + 1, landlord_id: 1, name: `Property ${i + 1}`, address: "123 Long Example Street", description: "Test property" }));
+  const tenant = { id: 1, landlord_id: 1, full_name: "Test Tenant", email: "tenant@example.test", phone: "5551234567", notes: "" };
+  const lease = { id: 1, landlord_id: 1, property_id: 1, unit_id: 1, start_date: "2026-01-01", end_date: "2030-12-31", monthly_rent: "1000.00", tenant_ids: [1], tenants: [{ tenant_id: 1, monthly_rent: "1000.00", deposit: "1000.00" }], notes: "" };
+  const propertyBill = { id: 1, landlord_id: 1, property_id: 1, bill_type: "water", title: "Water bill", amount_due: "120.00", recurrence: "monthly", due_date: dueDate, period_start: "2026-01-01", period_end: "2030-12-31", status: "unpaid", generated_at: null, notes: "" };
+  const rental = { id: 1, landlord_id: 1, lease_id: 1, tenant_id: 1, tenant_name: "Test Tenant", is_tenant_charge: false, title: "Monthly rent", bill_type: "rent", bill_year: now.getFullYear(), bill_month: now.getMonth() + 1, due_date: dueDate, amount_due: "1000.00", amount_paid: "0.00", balance: "1000.00", status: "open" };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/^\/api/, "");
+    const method = route.request().method();
+    let body: unknown;
+    if (path === "/auth/login") body = { access_token: "test-session", token_type: "bearer" };
+    else if (path === "/auth/logout") return route.fulfill({ status: 204 });
+    else if (path === "/me") body = user;
+    else if (path === "/properties") body = method === "POST" ? { ...properties[0], ...route.request().postDataJSON() } : properties;
+    else if (path === "/units") body = [{ id: 1, property_id: 1, name: "Suite One", description: "Upstairs" }];
+    else if (path === "/tenants") body = [tenant];
+    else if (path === "/leases") body = [lease];
+    else if (path === "/bills") body = [rental];
+    else if (path === "/payments") body = [];
+    else if (path === "/property-bills") body = [propertyBill];
+    else if (path.includes("tenant-bills-preview")) body = {
+      property_bill_id: 1, property_name: "Property 1", title: "Water bill", amount_due: "120.00",
+      due_date: dueDate, bill_type: "water", recurrence: "monthly", period_start: "2026-01-01",
+      period_end: "2030-12-31", preview_token: "preview",
+      tenants: [{ tenant_id: 1, lease_id: 1, tenant_name: "Test Tenant", amount_due: "120.00" }],
+    };
+    else if (path.endsWith("/generate-tenant-bills")) body = [{ ...rental, id: 2, is_tenant_charge: true, title: "Water charge" }];
+    else if (path.endsWith("/extension-preview")) body = {
+      source_bill_id: 1, title: propertyBill.title, property_name: "Property 1", recurrence: "monthly",
+      current_end: dueDate, through: "2031-01-31", due_day: 15, existing_future_bills: [propertyBill],
+      new_bills: [{ due_date: "2031-01-15", amount_due: "120.00" }], total_new_amount: "120.00",
+      warning: null, preview_token: "extension-preview",
+    };
+    else if (path.endsWith("/extend")) body = [{ ...propertyBill, id: 2, due_date: "2031-01-15" }];
+    else if (path === "/bills/1/payments") body = { id: 1, bill_id: 1, tenant_id: 1, landlord_id: 1, amount: "50.00", paid_at: new Date().toISOString() };
+    else if (path === "/admin/landlords") body = [{
+      user_id: 1, landlord_id: 1, full_name: "Test Owner", email: "owner@example.test",
+      is_active: true, active_sessions: 1, login_status: "signed_in",
+      created_at: "2026-01-01T00:00:00Z", last_login_at: null, last_seen_at: null,
+    }];
+    else if (path === "/admin/invites") body = method === "POST" ? {
+      id: 1, email: "new@example.test", code: "test-invitation-1234567890", status: "active",
+      created_at: "2026-01-01T00:00:00Z", expires_at: "2030-01-01T00:00:00Z",
+    } : [];
+    else return route.fulfill({ status: 404, json: { detail: `Unmocked endpoint ${method} ${path}` } });
+    await route.fulfill({ json: body });
+  });
+}
+
+async function login(page: Page, admin = false) {
+  await mockAPI(page, admin);
+  await page.goto("/");
+  await page.getByLabel("Email or admin username").fill(admin ? "admin" : "owner@example.test");
+  await page.getByLabel("Password", { exact: true }).fill("test-password");
+  await page.getByRole("button", { name: "Login", exact: true }).click();
+}
+
+async function noOverflow(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+}
+
+test("all landlord sections, nested units, pagination and forms remain accessible", async ({ page, isMobile }) => {
+  await login(page);
+  await expect(page.getByRole("heading", { name: "Welcome, Test Owner" })).toBeVisible();
+  await noOverflow(page);
+  await page.getByRole("button", { name: "Show units for Property 1", exact: true }).click();
+  await expect(page.getByText("Suite One", { exact: true })).toBeVisible();
+  await noOverflow(page);
+  await page.getByRole("button", { name: "Properties page 2", exact: true }).click();
+  await expect(page.getByText("Property 11", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add Property", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Name", { exact: true }).fill("Phone property");
+  await dialog.getByLabel("Address", { exact: true }).fill("456 Example Road");
+  await noOverflow(page);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  for (const name of ["Tenants", "Leases", "Rental & Payments", "Property Bills"]) {
+    await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name, exact: true }).click();
+    await noOverflow(page);
+  }
+  await expect(page.getByText("Water bill", { exact: true })).toBeVisible();
+  await expect(page.locator(".bill-filter-summary")).toContainText("Status: unpaid");
+  if (isMobile) await page.screenshot({ path: "/tmp/rental-mgmt-iphone-bills.png", fullPage: true });
+  if (isMobile) {
+    expect(await page.locator(".app-navigation").evaluate((el) => getComputedStyle(el).position)).toBe("fixed");
+    const action = page.locator(".bill-icon-button").first();
+    const box = await action.boundingBox();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  } else {
+    expect(await page.locator(".property-bill-table").evaluate((el) => getComputedStyle(el).display)).toBe("table");
+  }
+  await page.getByRole("button", { name: /Filters/ }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await noOverflow(page);
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
+  await expect(page.getByText("Data Encryption", { exact: false }).first()).toBeVisible();
+  await noOverflow(page);
+});
+
+test("bill previews and payment confirmation retain their request contracts", async ({ page }) => {
+  await login(page);
+  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  await navigation.getByRole("button", { name: "Property Bills", exact: true }).click();
+  await page.getByRole("button", { name: 'Generate tenant bills for "Water bill"' }).click();
+  let dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("table", { name: "Tenant charge preview" })).toBeVisible();
+  await expect(dialog.getByText("Test Tenant", { exact: true })).toBeVisible();
+  await noOverflow(page);
+  const generation = page.waitForRequest((request) => request.url().endsWith("/generate-tenant-bills") && request.method() === "POST");
+  await dialog.getByRole("button", { name: "Confirm & Generate" }).click();
+  expect((await generation).postDataJSON()).toEqual({ preview_token: "preview" });
+  await expect(dialog).toHaveCount(0);
+
+  await page.getByRole("button", { name: 'Extend repeated bill "Water bill"' }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Extend through").fill("2031-01-31");
+  await dialog.getByRole("button", { name: "Preview Bills" }).click();
+  await expect(dialog.getByRole("table", { name: "Existing future bills" })).toBeVisible();
+  await expect(dialog.getByRole("table", { name: "New bills to generate" })).toBeVisible();
+  await noOverflow(page);
+  const extension = page.waitForRequest((request) => request.url().endsWith("/extend") && request.method() === "POST");
+  await dialog.getByRole("button", { name: "Confirm & Generate" }).click();
+  expect((await extension).postDataJSON()).toEqual({ through: "2031-01-31", due_day: 15, preview_token: "extension-preview" });
+  await expect(dialog).toHaveCount(0);
+
+  await navigation.getByRole("button", { name: "Rental & Payments", exact: true }).click();
+  await page.getByRole("button", { name: "Record payment for bill #1", exact: true }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Payment amount ($)").fill("50");
+  await dialog.getByLabel("Note (optional)").fill("Phone payment");
+  await noOverflow(page);
+  const payment = page.waitForRequest((request) => request.url().endsWith("/bills/1/payments") && request.method() === "POST");
+  await dialog.getByRole("button", { name: "Record Payment", exact: true }).click();
+  expect((await payment).postDataJSON()).toEqual({ amount: "50", note: "Phone payment" });
+  await expect(dialog).toHaveCount(0);
+});
+
+test("super admin management and invitation links work on mobile and desktop", async ({ page }) => {
+  await login(page, true);
+  await expect(page.getByRole("heading", { name: "Landlord Management" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Landlord accounts" })).toBeVisible();
+  await noOverflow(page);
+  await page.getByLabel("Landlord email (optional)").fill("new@example.test");
+  await page.getByRole("button", { name: "Create Invite Link" }).click();
+  await expect(page.getByLabel("Invitation link", { exact: true })).toHaveValue("http://127.0.0.1:5179/#invite=test-invitation-1234567890");
+  await page.getByRole("button", { name: "Reset password for owner@example.test" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await noOverflow(page);
+});
+
+test("offline notice explains that writes are not queued", async ({ page, context }) => {
+  await login(page);
+  await expect(page.getByRole("heading", { name: "Welcome, Test Owner" })).toBeVisible();
+  await context.setOffline(true);
+  await expect(page.getByText(/Changes require a connection and are not queued/)).toBeVisible();
+  await context.setOffline(false);
+  await expect(page.getByText(/Changes require a connection and are not queued/)).toHaveCount(0);
+});

@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { api } from "./api";
 import type { LandlordInvite } from "./api";
 import { DataTable } from "./PaginatedEntries";
+import { copyText, runtimeConfig } from "./platform";
 
 const dateTime = (value: string | null) => value ? new Date(value).toLocaleString() : "-";
 
@@ -11,7 +12,7 @@ const STATUS_LABELS: Record<LandlordInvite["status"], string> = {
 };
 
 // The code travels in the URL fragment, which browsers never send to the server, so it stays out of access logs.
-export const inviteLink = (code: string) => `${window.location.origin}/#invite=${encodeURIComponent(code)}`;
+export const inviteLink = (code: string) => `${runtimeConfig.publicAppURL}/#invite=${encodeURIComponent(code)}`;
 
 export function LandlordInvites() {
   const [invites, setInvites] = useState<LandlordInvite[]>([]);
@@ -54,7 +55,7 @@ export function LandlordInvites() {
   async function copy() {
     if (!created) return;
     try {
-      await navigator.clipboard.writeText(created.link);
+      await copyText(created.link);
       setCopied(true);
     } catch {
       setError("Copy failed. Select the link and copy it manually.");

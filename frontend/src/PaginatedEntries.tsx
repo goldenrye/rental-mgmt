@@ -1,6 +1,7 @@
 import { Children, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { paginateEntries } from "./pagination";
+import { labelTableRows } from "./mobileTable";
 
 function PaginatedEntries({ children, label, render }: {
   children: ReactNode;
@@ -63,9 +64,9 @@ export function DataTable({ children, empty, headers, className, label = "Entrie
       label={label}
       render={(entries) => entries.length ? (
         <div className="table-wrap">
-          <table className={className} aria-label={label}>
-            {headers && <thead><tr>{headers.map((header) => <th scope="col" key={header}>{header}</th>)}</tr></thead>}
-            <tbody>{entries}</tbody>
+          <table className={`${className ?? ""}${headers ? " mobile-table" : ""}`} aria-label={label} role="table">
+            {headers && <thead role="rowgroup"><tr role="row">{headers.map((header) => <th role="columnheader" scope="col" key={header}>{header}</th>)}</tr></thead>}
+            <tbody role="rowgroup">{headers ? labelTableRows(entries, headers) : entries}</tbody>
           </table>
         </div>
       ) : <p className="muted">{empty}</p>}

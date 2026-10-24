@@ -1,13 +1,14 @@
 # Rental Management App
 
 A rental management application for small landlords, with a FastAPI backend, a React
-web app, and a read-only MCP server for AI agents. In production it runs as a Docker
+web app, a packaged Capacitor iPhone client, and a read-only MCP server for AI agents. In production it runs as a Docker
 Compose stack behind nginx with HTTPS (Let's Encrypt), Postgres, and automatic
 database backups.
 
 - [Features](#features)
 - [Architecture](#architecture)
 - [Local development](#local-development)
+- [iPhone client](#iphone-client)
 - [Production deployment](#production-deployment)
 - [Configuration reference](#configuration-reference)
 - [Administration](#administration)
@@ -19,7 +20,7 @@ database backups.
 
 ## Features
 
-**Landlords** (web app and API)
+**Landlords** (web app, iPhone client, and API)
 
 - Properties, with any number of units per property
 - Managed tenant records, with contact details
@@ -83,11 +84,23 @@ app/                     FastAPI backend and MCP server
   billing.py, bill_extensions.py, tenant_charges.py   billing logic
   login_throttle.py, account_access.py, security.py   authentication and sessions
   mcp_server.py          MCP server (stdio, streamable HTTP, SSE)
-frontend/                React + Vite web app, nginx configs, Dockerfile
+frontend/                Shared React + Vite web/iPhone UI, nginx configs, Dockerfile
+  ios/                   Capacitor iOS project with Keychain session storage
+  IOS.md                 iPhone build, configuration, signing, and testing guide
 scripts/                 init_env.py, db_status.py, backup_db.sh, test_*.py
 docker-compose.yml       local stack
 docker-compose.prod.yml  production overrides (HTTPS, closed ports, backups)
 ```
+
+## iPhone client
+
+The iPhone client uses the existing backend and accounts, with mobile record cards,
+bottom navigation, touch-sized controls, and Keychain-backed sessions. Desktop
+tables and browser behavior remain available. No data migration is required.
+
+See [the iPhone setup guide](frontend/IOS.md) for HTTPS configuration, CORS,
+`npm run ios:sync`, and Xcode installation/signing. Full Xcode and Apple signing
+are required to run on a device; no signed IPA is included.
 
 ## Local development
 
@@ -170,7 +183,7 @@ What the production override changes:
   `https://<DOMAIN>/mcp`, and Postgres only from the other containers.
 - The frontend is built with `VITE_API_BASE_URL=/api`, so the browser only talks to
   its own HTTPS origin.
-- `CORS_ORIGINS=https://<DOMAIN>` and `TRUST_PROXY_HEADERS=true` are set on the API,
+- `CORS_ORIGINS=https://<DOMAIN>,capacitor://localhost` and `TRUST_PROXY_HEADERS=true` are set on the API,
   and MCP advertises `https://<DOMAIN>` as its public URL.
 - A `backup` service dumps the database on a schedule.
 

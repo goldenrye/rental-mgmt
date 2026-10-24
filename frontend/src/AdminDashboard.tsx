@@ -137,7 +137,7 @@ export function AdminDashboard({ user, onLogout, onUserChange }: {
     try {
       await api.changePassword({ current_password: currentPassword, new_password: newPassword });
       const token = await api.login({ email: user.email, password: newPassword });
-      storeToken(token.access_token);
+      await storeToken(token.access_token);
       onUserChange(await api.me());
       setShowPassword(false);
       setCurrentPassword("");

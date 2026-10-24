@@ -28,7 +28,7 @@ services:
     # Reached only through nginx at https://${DOMAIN}/api
     ports: !reset []
     environment:
-      CORS_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
+      CORS_ORIGINS: https://${DOMAIN:?set DOMAIN in .env},capacitor://localhost
       # Unpublished, so only nginx can set X-Real-IP; login lockout is keyed by it
       TRUST_PROXY_HEADERS: "true"
 
