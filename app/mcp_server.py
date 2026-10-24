@@ -29,6 +29,7 @@ from app.models import (
 )
 from app.security import decode_access_token, validate_jwt_configuration
 from app.account_access import validate_account_access
+from app.mcp_api_keys import validate_api_key
 
 
 MCP_TRANSPORT = getenv("RENTAL_MGMT_MCP_TRANSPORT", "stdio").strip()
@@ -209,11 +210,11 @@ def resolve_landlord_id(db: Session, landlord_id: Optional[int] = None, landlord
     if request is not None:
         token = McpOAuthMiddleware.extract_bearer_token(request.scope)
     elif MCP_TRANSPORT == "stdio":
-        token = getenv("RENTAL_MGMT_MCP_TOKEN", "").strip()
+        token = getenv("RENTAL_MGMT_MCP_API_KEY", "").strip() or getenv("RENTAL_MGMT_MCP_TOKEN", "").strip()
     else:
         token = None
     if not token:
-        raise ValueError("An authenticated landlord token is required")
+        raise ValueError("A landlord MCP API key or access token is required")
     identity = validate_mcp_bearer_token(token)
     user = db.get(User, int(identity.client_id))
     if user is None or user.landlord_profile is None:
@@ -496,7 +497,7 @@ class EnsureMcpAcceptHeader:
 
 
 class McpOAuthMiddleware:
-    """Protect remote MCP transports with OAuth bearer-token authentication."""
+    """Protect remote MCP transports with API keys or OAuth bearer tokens."""
 
     PUBLIC_PATHS = {
         "/health",
@@ -533,7 +534,7 @@ class McpOAuthMiddleware:
 
         token = self.extract_bearer_token(scope)
         if token is None:
-            await self.send_unauthorized(send, "missing_token", "Authorization bearer token is required")
+            await self.send_unauthorized(send, "missing_token", "A single MCP API key or Authorization bearer token is required")
             return
         try:
             identity = validate_mcp_bearer_token(token)
@@ -547,13 +548,19 @@ class McpOAuthMiddleware:
 
     @staticmethod
     def extract_bearer_token(scope: Any) -> Optional[str]:
-        for key, value in scope.get("headers", []):
-            if key.lower() != b"authorization":
-                continue
-            authorization = value.decode("latin-1")
-            scheme, _, token = authorization.partition(" ")
-            if scheme.lower() == "bearer" and token.strip():
-                return token.strip()
+        credentials = [(key.lower(), value) for key, value in scope.get("headers", [])
+                       if key.lower() in {b"authorization", b"x-api-key"}]
+        # Reject ambiguous credentials rather than authenticating different identities
+        # in transport middleware and individual tool dispatch.
+        if len(credentials) != 1:
+            return None
+        key, value = credentials[0]
+        credential = value.decode("latin-1").strip()
+        if key == b"x-api-key":
+            return credential if credential.startswith("rmcp_") else None
+        scheme, _, token = credential.partition(" ")
+        if scheme.lower() == "bearer" and token.strip():
+            return token.strip()
         return None
 
     @staticmethod
@@ -604,6 +611,13 @@ def authorization_server_metadata() -> dict[str, Any]:
 
 
 def validate_mcp_bearer_token(token: str) -> AccessToken:
+    if token.startswith("rmcp_"):
+        with SessionLocal() as db:
+            user_id, expires_at = validate_api_key(db, token)
+            return AccessToken(
+                token=token, client_id=str(user_id), subject=str(user_id),
+                scopes=["rental:read"], expires_at=expires_at,
+            )
     try:
         payload = decode_access_token(token)
     except jwt.PyJWTError as exc:
@@ -656,7 +670,7 @@ if __name__ == "__main__":
     print(
         "Starting Rental Management MCP server "
         f"with transport={MCP_TRANSPORT}, host={MCP_HOST}, port={MCP_PORT}, "
-        f"https={use_https}, auth_enabled={MCP_AUTH_ENABLED}, auth_mode=oauth-jwt",
+        f"https={use_https}, auth_enabled={MCP_AUTH_ENABLED}, auth_mode=api-key-or-oauth-jwt",
         file=sys.stderr,
     )
     if MCP_TRANSPORT == "stdio":

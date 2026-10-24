@@ -24,6 +24,7 @@ import { DataTable } from "./PaginatedEntries";
 import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
 import { AdminDashboard } from "./AdminDashboard";
 import { EncryptionSettings } from "./EncryptionSettings";
+import { McpApiKeysDialog } from "./McpApiKeysDialog";
 import { AppNavigation } from "./AppNavigation";
 import type { Tab } from "./AppNavigation";
 import { InvitationEntry } from "./InvitationEntry";
@@ -187,6 +188,7 @@ function App() {
   const [tenantChargeBillId, setTenantChargeBillId] = useState<number | null>(null);
   const tenantChargeTrigger = useRef<HTMLButtonElement | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [mcpKeysOpen, setMcpKeysOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const [leaseDetailsId, setLeaseDetailsId] = useState<number | null>(null);
@@ -481,6 +483,7 @@ function App() {
     setUnitModalOpen(false);
     setTenantModalOpen(false);
     setProfileModalOpen(false);
+    setMcpKeysOpen(false);
     setBillEdit(null);
     setExtensionBill(null);
     setTenantChargeBillId(null);
@@ -891,6 +894,12 @@ function App() {
               <button type="button" onClick={openProfileModal} className="primary logout-button">
                 Edit Profile
               </button>
+              {user.role === "landlord" && (
+                <button type="button" className="secondary logout-button" onClick={() => {
+                  setProfileMenuOpen(false);
+                  setMcpKeysOpen(true);
+                }}>MCP API Keys</button>
+              )}
               <button onClick={logout} className="secondary logout-button">
                 Logout
               </button>
@@ -899,6 +908,8 @@ function App() {
         </div>
         </div>
       </header>
+
+      {mcpKeysOpen && user.role === "landlord" && <McpApiKeysDialog onClose={() => setMcpKeysOpen(false)} />}
 
       {profileModalOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">

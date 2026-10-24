@@ -527,8 +527,8 @@ new preview and confirm again. Bill responses include `tenant_name`,
 ## MCP server for AI agents
 
 The MCP server gives AI agents read-only access to one landlord's data. It
-authenticates with that landlord's access token and resolves the landlord from the
-token, never from tool arguments, so supplying another landlord's ID or email is
+authenticates with that landlord's MCP API key (recommended) or existing JWT access
+token and resolves the landlord from the credential, never from tool arguments, so supplying another landlord's ID or email is
 rejected. MCP sessions cannot be reused by another account. Admin and tenant tokens
 are refused.
 
@@ -549,7 +549,50 @@ Tools:
 
 ### Connect to the production server
 
-Get a token with the landlord's own email and password (set `LANDLORD_EMAIL` and
+Sign in as a landlord, open the profile menu, and choose **MCP API Keys**.
+Give the key an agent name, choose an optional expiration, and confirm your current
+password. Copy the key immediately: its full value is shown only once. The server
+stores only a SHA-256 hash of the randomly generated 256-bit secret.
+
+Configure your agent with the key instead of a login token:
+
+```bash
+# Set MCP_API_KEY securely in your shell first; do not commit it to source control.
+claude mcp add --transport http rental-management https://<DOMAIN>/mcp \
+  --header "Authorization: Bearer $MCP_API_KEY"
+```
+
+`X-API-Key: <key>` is also supported on HTTP and SSE. Send only one credential
+header; duplicate headers or both header types together are rejected. Keys in URL
+query parameters are not accepted. Clients that only support interactive OAuth
+must continue using JWT authentication or use a connector supporting custom headers.
+
+- Each key is restricted to read-only MCP access to its owner's data. It cannot
+  authenticate to the regular REST API, create keys, or perform administration.
+- By default it does not expire; you can choose 30, 90, or 365 days in the UI.
+- Normal login/logout does not change it. Revoke it from **MCP API Keys** whenever
+  needed. Revocation is checked on subsequent requests and tool calls, including
+  existing MCP sessions; it cannot recall data already returned to an agent.
+- Password changes, admin password resets, and account deactivation revoke all
+  of that landlord's keys. Reactivation does not restore revoked keys.
+- JWT signing-secret rotation does not revoke API keys. Revoke keys separately
+  during credential rotation. Treat them like passwords and use HTTPS remotely.
+- Key metadata includes creation, expiration, and last-use time (updated at most
+  once per minute). API key usage is separate from browser login-session counts.
+
+Deploy/restart both API and MCP from this version. Startup creates the new
+`mcp_api_keys` table without rewriting rental records or changing encryption
+preferences. No API keys are created automatically for existing landlords.
+
+Management endpoints (landlord JWT required):
+`GET /me/mcp-api-keys`, `POST /me/mcp-api-keys` with
+`{"name":"My agent","current_password":"...","expires_in_days":null}`, and
+`DELETE /me/mcp-api-keys/{id}`. The creation response returns `api_key` once with
+`Cache-Control: no-store`; lists contain only metadata.
+
+### Existing JWT connections
+
+JWT authentication remains supported. Get a token with the landlord's own email and password (set `LANDLORD_EMAIL` and
 `LANDLORD_PASSWORD` first), then register the server with Claude Code:
 
 ```bash
@@ -584,16 +627,16 @@ Tokens:
 **stdio**, for an MCP client on the same host:
 
 ```bash
-RENTAL_MGMT_MCP_TOKEN="$TOKEN" python -m app.mcp_server
+RENTAL_MGMT_MCP_API_KEY="$MCP_API_KEY" python -m app.mcp_server
 ```
 
 The repository's `.mcp.json` registers this stdio server for Claude Code started in
-the project root. It reads two variables from the shell that launches `claude`:
-`RENTAL_MGMT_MCP_TOKEN` (required) and `RENTAL_MGMT_PYTHON`, a Python interpreter
+the project root. It reads `RENTAL_MGMT_MCP_API_KEY` from the shell that launches
+`claude` (or the legacy `RENTAL_MGMT_MCP_TOKEN`) and `RENTAL_MGMT_PYTHON`, a Python interpreter
 with the requirements installed (default: `python` on `PATH`):
 
 ```bash
-export RENTAL_MGMT_MCP_TOKEN="$TOKEN"
+export RENTAL_MGMT_MCP_API_KEY="$MCP_API_KEY"
 export RENTAL_MGMT_PYTHON="$PWD/.venv/bin/python"
 claude
 ```
@@ -607,11 +650,15 @@ For other MCP clients:
       "command": "python",
       "args": ["-m", "app.mcp_server"],
       "cwd": "/path/to/rental-mgmt",
-      "env": { "RENTAL_MGMT_MCP_TOKEN": "<landlord access token>" }
+      "env": { "RENTAL_MGMT_MCP_API_KEY": "<landlord MCP API key>" }
     }
   }
 }
 ```
+
+For stdio, the API-key variable takes precedence over the legacy token variable.
+HTTP/SSE never fall back to process environment credentials: each request must
+carry its own key or token.
 
 **Streamable HTTP** (endpoint `/mcp`) or **SSE** (endpoint `/sse`):
 

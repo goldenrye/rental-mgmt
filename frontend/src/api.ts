@@ -2,6 +2,18 @@ import { runtimeConfig, sessionStorage } from "./platform";
 
 export type UserRole = "landlord" | "tenant" | "super_admin";
 
+export type McpApiKey = {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  status: "active" | "expired" | "revoked";
+  scope: string;
+};
+
 export type User = {
   id: number;
   email: string;
@@ -234,6 +246,10 @@ export const api = {
   resetLandlordPassword: (userId: number, new_password: string) =>
     request<void>(`/admin/landlords/${userId}/password`, { method: "POST", body: JSON.stringify({ new_password }) }),
   me: () => request<User>("/me"),
+  listMcpApiKeys: () => request<McpApiKey[]>("/me/mcp-api-keys"),
+  createMcpApiKey: (payload: { name: string; current_password: string; expires_in_days: number | null }) =>
+    request<McpApiKey & { api_key: string }>("/me/mcp-api-keys", { method: "POST", body: JSON.stringify(payload) }),
+  revokeMcpApiKey: (id: string) => request<void>(`/me/mcp-api-keys/${encodeURIComponent(id)}`, { method: "DELETE" }),
   setEncryptionPreference: (enabled: boolean, current_password: string) =>
     request<User>("/me/encryption", { method: "PUT", body: JSON.stringify({ enabled, current_password }) }),
   updateProfile: (payload: {

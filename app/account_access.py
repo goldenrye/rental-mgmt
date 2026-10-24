@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import LoginSession, User, UserAccess, UserRole
+from app.models import LoginSession, McpApiKey, User, UserAccess, UserRole
 from app.security import create_access_token, decode_access_token, hash_password, verify_password
 
 MIN_INITIAL_ADMIN_PASSWORD_LENGTH = 12
@@ -128,6 +128,9 @@ def revoke_all_sessions(db: Session, user: User) -> None:
     ))
     db.execute(update(LoginSession).where(
         LoginSession.user_id == user.id, LoginSession.revoked_at.is_(None),
+    ).values(revoked_at=datetime.now(timezone.utc)))
+    db.execute(update(McpApiKey).where(
+        McpApiKey.user_id == user.id, McpApiKey.revoked_at.is_(None),
     ).values(revoked_at=datetime.now(timezone.utc)))
 
 

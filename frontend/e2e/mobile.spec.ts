@@ -168,3 +168,46 @@ test("offline notice explains that writes are not queued", async ({ page, contex
   await context.setOffline(false);
   await expect(page.getByText(/Changes require a connection and are not queued/)).toHaveCount(0);
 });
+
+test("landlord creates a one-time MCP key and revokes it from the profile", async ({ page }) => {
+  await login(page);
+  let created = false;
+  let revoked = false;
+  const secret = `rmcp_${"a".repeat(43)}`;
+  const metadata = () => ({
+    id: "test-key", name: "My agent", prefix: secret.slice(0, 13), status: revoked ? "revoked" : "active",
+    created_at: "2026-10-24T00:00:00Z", expires_at: null, last_used_at: null, revoked_at: null, scope: "rental:read",
+  });
+  await page.route("**/api/me/mcp-api-keys**", async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({
+        name: "My agent", current_password: "test-password", expires_in_days: null,
+      });
+      created = true;
+      return route.fulfill({ status: 201, json: { ...metadata(), api_key: secret } });
+    }
+    if (route.request().method() === "DELETE") {
+      revoked = true;
+      return route.fulfill({ status: 204 });
+    }
+    return route.fulfill({ json: created ? [metadata()] : [] });
+  });
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "MCP API Keys", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "MCP API Keys" });
+  await dialog.getByLabel("Key name", { exact: true }).fill("My agent");
+  await dialog.getByLabel("Current password", { exact: true }).fill("test-password");
+  await dialog.getByRole("button", { name: "Create API Key", exact: true }).click();
+  await expect(dialog.getByLabel("New MCP API key")).toHaveValue(secret);
+  await expect(dialog.getByLabel("Current password", { exact: true })).toHaveValue("");
+  await noOverflow(page);
+  expect(await page.evaluate((key) => Object.values(localStorage).some((value) => value.includes(key)), secret)).toBe(false);
+  page.on("dialog", (confirmation) => confirmation.accept());
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "MCP API Keys", exact: true }).click();
+  await expect(dialog.getByLabel("New MCP API key")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Revoke API key My agent" }).click();
+  await expect(dialog.getByRole("cell", { name: /^(Status )?revoked$/ })).toBeVisible();
+  expect(revoked).toBe(true);
+});

@@ -5,6 +5,7 @@
       "command": "${RENTAL_MGMT_PYTHON:-python}",
       "args": ["-m", "app.mcp_server"],
       "env": {
+        "RENTAL_MGMT_MCP_API_KEY": "${RENTAL_MGMT_MCP_API_KEY:-}",
         "RENTAL_MGMT_MCP_TOKEN": "${RENTAL_MGMT_MCP_TOKEN:-}"
       }
     }

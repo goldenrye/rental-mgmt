@@ -46,7 +46,7 @@ function AccountActionDialog({ action, onClose, onSaved }: {
     try {
       if (kind === "password") {
         await api.resetLandlordPassword(account.user_id, password);
-        onSaved(`Password reset for ${account.email}. Existing sessions were revoked.`);
+        onSaved(`Password reset for ${account.email}. Existing sessions and MCP API keys were revoked.`);
       } else {
         await api.setLandlordActive(account.user_id, !account.is_active);
         onSaved(`${account.email} ${account.is_active ? "deactivated" : "activated"}.`);
@@ -69,10 +69,10 @@ function AccountActionDialog({ action, onClose, onSaved }: {
         <p>{account.full_name} ({account.email})</p>
         <p className="muted">
           {kind === "password"
-            ? "This replaces the password and revokes all API and MCP sessions. Share the new password securely with the landlord."
+            ? "This replaces the password and revokes all API and MCP sessions, including MCP API keys. Share the new password securely with the landlord."
             : account.is_active
-              ? "This blocks login and revokes all API and MCP sessions. Properties, tenants, and bills are preserved."
-              : "This restores login access. Previously revoked sessions remain invalid."}
+              ? "This blocks login and revokes all API and MCP sessions, including MCP API keys. Properties, tenants, and bills are preserved."
+              : "This restores login access. Previously revoked sessions and MCP API keys remain invalid."}
         </p>
         {kind === "password" && (
           <>

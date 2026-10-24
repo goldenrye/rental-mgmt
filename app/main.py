@@ -68,6 +68,7 @@ from app.schemas import (
 from app.security import decode_access_token, hash_password, verify_password
 from app.account_access import bootstrap_super_admin, ensure_access, issue_login, revoke_all_sessions, revoke_session
 from app.admin import router as admin_router
+from app.mcp_api_keys import router as mcp_api_keys_router
 from app.invites import claim_invite, find_usable_invite
 from app.login_throttle import authenticate, client_ip
 from app.tenant_charges import preview_tenant_charges
@@ -86,6 +87,7 @@ with SessionLocal() as db:
     bootstrap_super_admin(db)
 app = FastAPI(title="Rental Management API", version="1.0.0")
 app.include_router(admin_router)
+app.include_router(mcp_api_keys_router)
 
 
 @app.exception_handler(StaleDataError)
