@@ -1125,6 +1125,7 @@ function App() {
                           Edit
                         </button>
                         <button
+                          className="danger"
                           onClick={() =>
                             confirmDelete(`property "${property.name}"`) &&
                             withStatus(() => api.deleteProperty(property.id).then(loadLandlordData), "Property deleted.")
@@ -1168,6 +1169,7 @@ function App() {
                                       Edit
                                     </button>
                                     <button
+                                      className="danger"
                                       disabled={loading}
                                       aria-label={`Delete unit ${unit.name} in ${property.name}`}
                                       onClick={() =>
@@ -1339,6 +1341,7 @@ function App() {
                           Edit
                         </button>
                         <button
+                          className="danger"
                           onClick={() =>
                             confirmDelete(`tenant "${tenant.full_name}"`) &&
                             withStatus(() => api.deleteTenant(tenant.id).then(loadLandlordData), "Tenant deleted.")
@@ -2034,6 +2037,7 @@ function App() {
                             Pay
                           </button>
                           <button
+                            className="danger"
                             disabled={loading}
                             aria-label={`Delete bill #${bill.id}`}
                             onClick={() =>

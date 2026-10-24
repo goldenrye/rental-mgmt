@@ -106,7 +106,7 @@ export function LandlordInvites() {
             <td>{dateTime(invite.created_at)}</td><td>{dateTime(invite.expires_at)}</td>
             <td>{invite.used_by_email ? `${invite.used_by_email} (${dateTime(invite.used_at)})` : "-"}</td>
             <td><div className="compact-row-actions">
-              {invite.status === "active" && <button disabled={loading} aria-label={`Revoke invitation #${invite.id}`} onClick={() => revoke(invite)}>Revoke</button>}
+              {invite.status === "active" && <button className="danger" disabled={loading} aria-label={`Revoke invitation #${invite.id}`} onClick={() => revoke(invite)}>Revoke</button>}
             </div></td>
           </tr>
         ))}

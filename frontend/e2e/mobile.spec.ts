@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 async function mockAPI(page: Page, admin = false) {
   const now = new Date();
@@ -65,6 +65,71 @@ async function login(page: Page, admin = false) {
 async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 }
+
+async function actionStyle(button: Locator) {
+  return button.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      background: style.backgroundColor, color: style.color, border: style.borderColor,
+      radius: style.borderRadius, size: style.fontSize, weight: style.fontWeight,
+      minHeight: style.minHeight,
+    };
+  });
+}
+
+test("action buttons share styles across pages and retain focus and touch targets", async ({ page, isMobile }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await login(page);
+  const addProperty = page.getByRole("button", { name: "Add Property", exact: true });
+  const primary = await actionStyle(addProperty);
+  const secondary = await actionStyle(page.getByRole("button", { name: "Add unit to Property 1", exact: true }));
+  const danger = await actionStyle(page.getByRole("table", { name: "Properties", exact: true }).getByRole("button", { name: "Delete", exact: true }).first());
+  expect(primary.radius).toBe("8px");
+  expect(primary.size).toBe("14px");
+  expect(primary.minHeight).toBe(isMobile ? "44px" : "36px");
+  expect(primary.background).not.toBe(secondary.background);
+  expect(danger.color).toBe("rgb(180, 35, 24)");
+  await addProperty.focus();
+  await expect(addProperty).toBeFocused();
+  if (!isMobile) {
+    // Desktop Tab navigation differs from iOS hardware-keyboard settings.
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(addProperty).toBeFocused();
+    expect(await addProperty.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("solid");
+    await addProperty.hover();
+    expect((await actionStyle(addProperty)).background).toBe("rgb(32, 69, 181)");
+    await page.mouse.move(0, 0);
+  }
+  await addProperty.click();
+  const dialog = page.getByRole("dialog");
+  await page.mouse.move(0, 0);
+  expect(await actionStyle(dialog.getByRole("button", { name: "Cancel", exact: true }))).toEqual(secondary);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  for (const [section, action] of [
+    ["Tenants", "Add Tenant"], ["Leases", "Add Lease"], ["Property Bills", "Create Property Bill"],
+  ]) {
+    await nav.getByRole("button", { name: section, exact: true }).click();
+    expect(await actionStyle(page.getByRole("button", { name: action, exact: true }))).toEqual(primary);
+    await noOverflow(page);
+  }
+  const icon = page.locator(".bill-icon-button:not(.bill-icon-delete)").first();
+  expect(await actionStyle(icon)).toEqual(secondary);
+  expect(await actionStyle(page.locator(".bill-icon-delete"))).toEqual(danger);
+  const box = await icon.boundingBox();
+  expect(box!.width).toBe(isMobile ? 44 : 36);
+  expect(box!.height).toBe(isMobile ? 44 : 36);
+  await nav.getByRole("button", { name: "Rental & Payments", exact: true }).click();
+  expect(await actionStyle(page.getByRole("button", { name: "Record payment for bill #1", exact: true }))).toEqual(secondary);
+  expect(await actionStyle(page.getByRole("button", { name: "Delete bill #1", exact: true }))).toEqual(danger);
+  await page.getByRole("button", { name: "Record payment for bill #1", exact: true }).click();
+  const save = page.getByRole("dialog").getByRole("button", { name: "Record Payment", exact: true });
+  await expect(save).toBeDisabled();
+  expect(await save.evaluate((el) => getComputedStyle(el).opacity)).toBe("0.5");
+  expect(await actionStyle(save)).toEqual(primary);
+});
 
 test("all landlord sections, nested units, pagination and forms remain accessible", async ({ page, isMobile }) => {
   await login(page);

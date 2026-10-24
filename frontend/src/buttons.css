@@ -1,0 +1,106 @@
+/* Shared action styles. Page containers control layout, not button appearance. */
+:root {
+  --button-height: 36px;
+  --button-radius: 8px;
+  --button-accent: #2854d7;
+  --button-accent-hover: #2045b5;
+  --button-border: #cbd5e1;
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--button-height);
+  min-width: var(--button-height);
+  padding: 7px 12px;
+  border: 1px solid var(--button-border);
+  border-radius: var(--button-radius);
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  touch-action: manipulation;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+button.secondary {
+  background: #fff;
+  border-color: var(--button-border);
+  color: #334155;
+}
+
+button.primary,
+.pagination-buttons button[aria-current="page"] {
+  background: var(--button-accent);
+  border-color: var(--button-accent);
+  color: #fff;
+}
+
+button.danger,
+button.bill-icon-delete {
+  background: #fff;
+  border-color: #f0b4b0;
+  color: #b42318;
+}
+
+button:focus-visible {
+  outline: 3px solid var(--button-accent);
+  outline-offset: 3px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (hover: hover) {
+  button:hover:not(:disabled) {
+    background: #eef3fa;
+    border-color: #94a3b8;
+  }
+
+  button.primary:hover:not(:disabled),
+  .pagination-buttons button[aria-current="page"]:hover:not(:disabled) {
+    background: var(--button-accent-hover);
+    border-color: var(--button-accent-hover);
+  }
+
+  button.danger:hover:not(:disabled),
+  button.bill-icon-delete:hover:not(:disabled) {
+    background: #fff0ee;
+    border-color: #d92d20;
+  }
+}
+
+button:active:not(:disabled) {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.bill-icon-button {
+  flex: 0 0 var(--button-height);
+  width: var(--button-height);
+  height: var(--button-height);
+  padding: 0;
+}
+
+button svg {
+  flex-shrink: 0;
+}
+
+@media (max-width: 700px), (hover: none) and (pointer: coarse) and (max-width: 1000px) {
+  :root {
+    --button-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
+}

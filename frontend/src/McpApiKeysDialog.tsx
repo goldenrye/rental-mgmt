@@ -117,7 +117,7 @@ export function McpApiKeysDialog({ onClose }: { onClose: () => void }) {
             <td>{key.name}</td><td>{key.prefix}...</td><td>{key.status}</td>
             <td>{dateTime(key.created_at)}</td><td>{key.expires_at ? dateTime(key.expires_at) : "Never"}</td>
             <td>{dateTime(key.last_used_at)}</td>
-            <td>{key.status === "active" && <button type="button" className="secondary" disabled={loading}
+            <td>{key.status === "active" && <button type="button" className="danger" disabled={loading}
               aria-label={`Revoke API key ${key.name}`} onClick={() => {
                 if (!window.confirm(`Revoke "${key.name}"? Agents using this key will lose access.`)) return;
                 void run(async () => {

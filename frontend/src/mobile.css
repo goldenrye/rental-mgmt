@@ -283,21 +283,6 @@
     gap: 8px;
   }
 
-  .property-bill-table .bill-icon-button,
-  .lease-table .bill-icon-button {
-    flex-basis: 44px;
-    width: 44px;
-    height: 44px;
-  }
-
-  .property-bills-toolbar button,
-  .property-bills-header button,
-  .leases-header > button,
-  .pagination-buttons button {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
   .bill-filter-summary {
     flex-basis: 100%;
     white-space: normal;

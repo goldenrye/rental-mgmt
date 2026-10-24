@@ -83,7 +83,7 @@ function AccountActionDialog({ action, onClose, onSaved }: {
         {error && <p role="alert" className="alert error">{error}</p>}
         <div className="modal-actions">
           <button type="button" className="secondary" disabled={saving} onClick={onClose}>Cancel</button>
-          <button className="primary" disabled={saving}>{saving ? "Saving..." : label}</button>
+          <button className={kind === "password" || account.is_active ? "danger" : "primary"} disabled={saving}>{saving ? "Saving..." : label}</button>
         </div>
       </form>
     </dialog>
@@ -205,7 +205,7 @@ export function AdminDashboard({ user, onLogout, onUserChange }: {
                 <td>{account.login_status === "signed_in" ? "Signed in" : account.login_status === "signed_out" ? "Signed out" : "No recorded login"}</td>
                 <td>{account.active_sessions}</td><td>{dateTime(account.last_login_at)}</td><td>{dateTime(account.last_seen_at)}</td>
                 <td><div className="compact-row-actions">
-                  <button disabled={loading} aria-haspopup="dialog" aria-label={`${account.is_active ? "Deactivate" : "Activate"} ${account.email}`} onClick={() => setAction({ account, kind: "status" })}>{account.is_active ? "Deactivate" : "Activate"}</button>
+                  <button className={account.is_active ? "danger" : "secondary"} disabled={loading} aria-haspopup="dialog" aria-label={`${account.is_active ? "Deactivate" : "Activate"} ${account.email}`} onClick={() => setAction({ account, kind: "status" })}>{account.is_active ? "Deactivate" : "Activate"}</button>
                   <button disabled={loading} aria-haspopup="dialog" aria-label={`Reset password for ${account.email}`} onClick={() => setAction({ account, kind: "password" })}>Reset Password</button>
                 </div></td>
               </tr>
