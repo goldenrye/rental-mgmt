@@ -184,6 +184,39 @@ class GoogleCalendarExport(Base):
     bill: Mapped["RentalBill"] = relationship(back_populates="calendar_exports")
 
 
+class WebPushSubscription(Base):
+    """One browser's push subscription. Endpoint and keys are sealed; only a hash is indexed."""
+
+    __tablename__ = "web_push_subscriptions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), index=True, nullable=False)
+    endpoint_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    subscription: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class WebPushPreference(Base):
+    __tablename__ = "web_push_preferences"
+
+    landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), primary_key=True)
+    lease_expiry: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    bill_due: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class WebPushNotice(Base):
+    """Sent-reminder marker so each lease end or bill due date is announced once."""
+
+    __tablename__ = "web_push_notices"
+
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    ref_id: Mapped[int] = mapped_column(primary_key=True)
+    due_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), index=True, nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class TenantProfile(EncryptedRecord, Base):
     __tablename__ = "tenant_profiles"
 

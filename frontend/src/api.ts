@@ -12,6 +12,16 @@ export type GoogleCalendarStatus = {
   last_error: string | null;
 };
 
+export type WebPushStatus = {
+  available: boolean;
+  public_key: string | null;
+  devices: number;
+  lease_expiry: boolean;
+  bill_due: boolean;
+  lease_notice_days: number;
+  bill_notice_days: number;
+};
+
 export type McpApiKey = {
   id: string;
   name: string;
@@ -263,6 +273,14 @@ export const api = {
     method: "POST", credentials: "include",
   }),
   disconnectGoogleCalendar: () => request<void>("/me/google-calendar", { method: "DELETE" }),
+  webPushStatus: () => request<WebPushStatus>("/me/web-push"),
+  setWebPushPreferences: (preferences: { lease_expiry: boolean; bill_due: boolean }) =>
+    request<WebPushStatus>("/me/web-push", { method: "PUT", body: JSON.stringify(preferences) }),
+  addWebPushSubscription: (subscription: PushSubscriptionJSON) =>
+    request<WebPushStatus>("/me/web-push/subscriptions", { method: "POST", body: JSON.stringify(subscription) }),
+  removeWebPushSubscription: (endpoint: string) =>
+    request<void>("/me/web-push/subscriptions", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
+  testWebPush: () => request<WebPushStatus>("/me/web-push/test", { method: "POST" }),
   listMcpApiKeys: () => request<McpApiKey[]>("/me/mcp-api-keys"),
   createMcpApiKey: (payload: { name: string; current_password: string; expires_in_days: number | null }) =>
     request<McpApiKey & { api_key: string }>("/me/mcp-api-keys", { method: "POST", body: JSON.stringify(payload) }),

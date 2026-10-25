@@ -56,3 +56,28 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(cacheFirstAsset(request));
   }
 });
+
+// Reminder payloads hold only counts and dates; details stay behind sign-in.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data?.json() ?? {};
+  } catch {}
+  event.waitUntil(self.registration.showNotification(
+    typeof data.title === "string" ? data.title : "Rental Management",
+    {
+      body: typeof data.body === "string" ? data.body : "",
+      tag: typeof data.tag === "string" ? data.tag : undefined,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+    },
+  ));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+    const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
+    return open ? open.focus() : self.clients.openWindow("/");
+  }));
+});

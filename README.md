@@ -15,6 +15,7 @@ database backups.
 - [Database encryption](#database-encryption)
 - [Billing guide](#billing-guide)
 - [Google Calendar exports](#google-calendar-exports)
+- [Push notifications](#push-notifications)
 - [MCP server for AI agents](#mcp-server-for-ai-agents)
 - [API](#api)
 - [Testing](#testing)
@@ -38,6 +39,7 @@ database backups.
   status (open, partial or paid)
 - Property bill filters, lease details and profile and password settings
 - Optional Google Calendar export of newly generated rent bills, off by default per landlord
+- Optional browser push reminders before leases end and bills are due, turned on per device
 
 **Super admin**
 
@@ -331,6 +333,8 @@ Backend (`api` and `mcp`; read from the environment or the project-root `.env`):
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated browser origins allowed to call the API |
 | `OPEN_REGISTRATION` | `false` | `true` lets anyone register a landlord or tenant without an invitation. Local development only. |
 | `TRUST_PROXY_HEADERS` | `false` | Use nginx's `X-Real-IP` as the client IP. Enable only when the API is reachable solely through nginx. |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | — | Enables [push notifications](#push-notifications). Generate with `python -m scripts.generate_vapid_key`; `api` only. |
+| `WEB_PUSH_CONTACT` | — | `mailto:` or `https:` contact sent to browser push services; required with the key |
 
 MCP server (`mcp` only):
 
@@ -771,6 +775,56 @@ as well (this may affect other landlords connected using the same Google account
 Calendar endpoints (landlord authentication required except the OAuth callback):
 `GET/PUT/DELETE /me/google-calendar`, `POST /me/google-calendar/connect`, and
 `GET /google-calendar/callback`.
+
+## Push notifications
+
+In **Edit Profile > Notifications**, each landlord can turn on browser push
+reminders for the current device and choose which reminders to receive:
+
+- **Lease ending soon**: 30 days before a lease's end date.
+- **Bills due soon**: 3 days before unpaid property bills and open or partially
+  paid tenant bills are due.
+
+Each lease end date and bill due date is announced once, grouped into at most one
+notification per type per scan. The API scans hourly, using the server's date.
+Bills already past due when reminders are turned on are not announced. If no device
+accepts a reminder, it is retried on the next scan. Notifications contain only
+counts and dates, never tenant names, property names or amounts, because they can
+appear on a locked screen. Tapping one opens the app.
+
+Signing out removes the browser's subscription. Signing in as a different landlord
+in the same browser and opening the profile moves it to that landlord. Subscriptions
+are encrypted with the data encryption key, so that key must be configured.
+Deactivated landlords receive nothing.
+
+Browser support: Chrome, Edge and Firefox on desktop and Android, and Safari on
+macOS. On iPhone and iPad (iOS 16.4+), the site must first be added to the Home Screen
+and opened from there. The packaged iPhone client does not receive notifications.
+The service worker is registered only in production builds, so use `npm run build`
+and `npm run preview` (or the Compose stack) to test locally.
+
+### Server setup
+
+1. Generate a key once and keep it with your other secrets:
+
+   ```bash
+   python -m scripts.generate_vapid_key
+   ```
+
+2. Add the printed line and a contact address to `.env`, then restart the API:
+
+   ```dotenv
+   WEB_PUSH_VAPID_PRIVATE_KEY=...
+   WEB_PUSH_CONTACT=mailto:admin@YOUR_DOMAIN
+   ```
+
+Do not rotate the key: rotating it invalidates every subscription. Landlords then
+have to turn notifications on again on each device. The API sends only to the
+push services of Chrome/Android (FCM), Firefox, Safari/Apple and Edge (WNS). It
+rejects other endpoints so that it cannot be used to make requests to arbitrary URLs.
+
+Endpoints (landlord authentication required): `GET/PUT /me/web-push`,
+`POST/DELETE /me/web-push/subscriptions`, and `POST /me/web-push/test`.
 
 ## API
 

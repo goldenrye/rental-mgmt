@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     google_calendar_redirect_uri: str = ""
     # Used only for links inside exported events, never inferred from request headers.
     google_calendar_app_url: str = ""
+    # Web push reminders: base64url raw P-256 key from `python -m scripts.generate_vapid_key`.
+    web_push_vapid_private_key: SecretStr = SecretStr("")
+    # mailto: or https: contact sent to push services in the VAPID "sub" claim.
+    web_push_contact: str = ""
 
     @property
     def allowed_origins(self) -> list[str]:

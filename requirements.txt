@@ -12,3 +12,4 @@ psycopg[binary]==3.2.13
 mcp[cli]>=1.30,<2
 python-multipart>=0.0.20,<1
 httpx>=0.28,<1
+pywebpush==2.3.0

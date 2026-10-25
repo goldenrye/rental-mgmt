@@ -26,6 +26,7 @@ import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
 import { AdminDashboard } from "./AdminDashboard";
 import { EncryptionSettings } from "./EncryptionSettings";
 import { GoogleCalendarSettings } from "./GoogleCalendarSettings";
+import { WebPushSettings, removeThisDeviceFromPush } from "./WebPushSettings";
 import { McpApiKeysDialog } from "./McpApiKeysDialog";
 import { AppNavigation } from "./AppNavigation";
 import type { Tab } from "./AppNavigation";
@@ -454,6 +455,7 @@ function App() {
   }
 
   async function logout() {
+    if (user?.role === "landlord") await removeThisDeviceFromPush();
     let revoked = true;
     try {
       await api.logout();
@@ -938,6 +940,9 @@ function App() {
             )}
             {user.role === "landlord" && (
               <GoogleCalendarSettings loading={loading} onBusyChange={setLoading} />
+            )}
+            {user.role === "landlord" && (
+              <WebPushSettings loading={loading} onBusyChange={setLoading} />
             )}
             <div className="form-section">
               <h3>Change password</h3>
