@@ -32,6 +32,8 @@ import { AppNavigation } from "./AppNavigation";
 import type { Tab } from "./AppNavigation";
 import { InvitationEntry } from "./InvitationEntry";
 import { isNative, runtimeConfig } from "./platform";
+import { t } from "./i18n";
+import { LanguageSelector, useLanguage } from "./LanguageSelector";
 import { billCategoryLabels, billRecurrenceLabels, defaultPropertyBillFilters, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
 import { sortBillsByDueDate } from "./billSorting";
 import type { PropertyBillFilters } from "./propertyBillFilters";
@@ -146,6 +148,7 @@ function splitMonthlyRent(monthlyRent: string, tenantCount: number): string[] {
 }
 
 function App() {
+  useLanguage();
   const [user, setUser] = useState<User | null>(null);
   // Invitation links carry the code in the URL fragment (#invite=...), which is never sent to the server.
   const [inviteCode, setInviteCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("invite") ?? "");
@@ -312,14 +315,14 @@ function App() {
     [billFilter, propertyBills],
   );
   const activeBillFilters = [
-    billFilter.start && `Due from: ${billFilter.start}`,
-    billFilter.end && `Due through: ${billFilter.end}`,
-    billFilter.due_date && `Due on: ${billFilter.due_date}`,
-    billFilter.bill_type && `Category: ${billCategoryLabels[billFilter.bill_type]}`,
-    billFilter.property_id && `Property: ${propertyNameById.get(Number(billFilter.property_id)) ?? `#${billFilter.property_id}`}`,
-    billFilter.status && `Status: ${billFilter.status}`,
-    billFilter.recurrence && `Repeat: ${billRecurrenceLabels[billFilter.recurrence]}`,
-    billFilter.tenant_bills && `Tenant bills: ${billFilter.tenant_bills === "generated" ? "Generated" : "Not generated"}`,
+    billFilter.start && t("Due from: {{date}}", { date: billFilter.start }),
+    billFilter.end && t("Due through: {{date}}", { date: billFilter.end }),
+    billFilter.due_date && t("Due on: {{date}}", { date: billFilter.due_date }),
+    billFilter.bill_type && t("Category: {{value}}", { value: t(billCategoryLabels[billFilter.bill_type]) }),
+    billFilter.property_id && t("Property: {{value}}", { value: propertyNameById.get(Number(billFilter.property_id)) ?? `#${billFilter.property_id}` }),
+    billFilter.status && t("Status: {{value}}", { value: t(billFilter.status) }),
+    billFilter.recurrence && t("Repeat: {{value}}", { value: t(billRecurrenceLabels[billFilter.recurrence]) }),
+    billFilter.tenant_bills && t("Tenant bills: {{value}}", { value: t(billFilter.tenant_bills === "generated" ? "Generated" : "Not generated") }),
   ].filter(Boolean);
 
   function closeBillFilters() {
@@ -367,14 +370,14 @@ function App() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Unexpected error";
       setError(errorMessage);
-      window.alert(errorMessage);
+      window.alert(t(errorMessage));
     } finally {
       setLoading(false);
     }
   }
 
   function confirmDelete(itemName: string): boolean {
-    return window.confirm(`Delete ${itemName}? This action cannot be undone.`);
+    return window.confirm(t("Delete {{item}}? This action cannot be undone.", { item: itemName }));
   }
 
   function openAddLeaseModal() {
@@ -721,7 +724,7 @@ function App() {
       setManualBillForm(emptyManualBill);
       setBillModalOpen(false);
       setPropertyBills(await api.listPropertyBills());
-      setMessage(`${createdBills.length} property bill${createdBills.length === 1 ? "" : "s"} created.`);
+      setMessage(t(createdBills.length === 1 ? "{{count}} property bill created." : "{{count}} property bills created.", { count: createdBills.length }));
     });
   }
 
@@ -756,7 +759,7 @@ function App() {
       bill.id === tenantChargeBillId ? { ...bill, generated_at: new Date().toISOString() } : bill,
     ));
     setError("");
-    setMessage(`${generatedBills.length} tenant charge${generatedBills.length === 1 ? "" : "s"} generated. View them in Rental & Payments.`);
+    setMessage(t(generatedBills.length === 1 ? "{{count}} tenant charge generated. View them in Rental & Payments." : "{{count}} tenant charges generated. View them in Rental & Payments.", { count: generatedBills.length }));
     closeTenantChargeDialog();
   }
 
@@ -780,31 +783,32 @@ function App() {
     return (
       <main className="auth-shell">
         <section className="auth-card">
-          <p className="eyebrow">Rental Management</p>
-          <h1>{authMode === "forgot" ? "Reset your password" : authMode === "reset" ? "Choose a new password" : "Manage leases, rental, and payments"}</h1>
+          <LanguageSelector />
+          <p className="eyebrow">{t("Rental Management")}</p>
+          <h1>{t(authMode === "forgot" ? "Reset your password" : authMode === "reset" ? "Choose a new password" : "Manage leases, rental, and payments")}</h1>
           <p className="muted">
-            {authMode === "forgot" && "Enter your account email and we'll send you a link to choose a new password."}
-            {authMode === "reset" && "Enter a new password of at least 8 characters. Signing in again is required on all your devices."}
-            {(authMode === "login" || authMode === "register") && "Sign in as a landlord to manage properties and tenants."}
-            {authMode === "login" && !inviteCode && " New landlord accounts are by invitation only; ask the administrator for an invitation link."}
+            {authMode === "forgot" && t("Enter your account email and we'll send you a link to choose a new password.")}
+            {authMode === "reset" && t("Enter a new password of at least 8 characters. Signing in again is required on all your devices.")}
+            {(authMode === "login" || authMode === "register") && t("Sign in as a landlord to manage properties and tenants.")}
+            {authMode === "login" && !inviteCode && t(" New landlord accounts are by invitation only; ask the administrator for an invitation link.")}
           </p>
           {inviteCode && (authMode === "login" || authMode === "register") && (
             <div className="toggle">
               <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>
-                Login
+                {t("Login")}
               </button>
               <button className={authMode === "register" ? "active" : ""} onClick={() => setAuthMode("register")}>
-                Register
+                {t("Register")}
               </button>
             </div>
           )}
           <form onSubmit={submitAuth} className="form">
             {authMode === "register" && (
-              <p className="alert success">You are signing up as a landlord with an invitation. Your account is ready to use as soon as you create it.</p>
+              <p className="alert success">{t("You are signing up as a landlord with an invitation. Your account is ready to use as soon as you create it.")}</p>
             )}
             {authMode === "register" && (
               <label>
-                Full name
+                {t("Full name")}
                 <input
                   required
                   value={authForm.full_name}
@@ -813,7 +817,7 @@ function App() {
               </label>
             )}
             {authMode !== "reset" && <label>
-              {authMode === "login" ? "Email or admin username" : "Email"}
+              {t(authMode === "login" ? "Email or admin username" : "Email")}
               <input
                 required
                 type={authMode === "login" ? "text" : "email"}
@@ -826,7 +830,7 @@ function App() {
               />
             </label>}
             {authMode !== "forgot" && <label>
-              {authMode === "reset" ? "New password" : "Password"}
+              {t(authMode === "reset" ? "New password" : "Password")}
               <input
                 required
                 type="password"
@@ -838,7 +842,7 @@ function App() {
               />
             </label>}
             {authMode === "reset" && <label>
-              Confirm new password
+              {t("Confirm new password")}
               <input
                 required
                 type="password"
@@ -850,9 +854,9 @@ function App() {
               />
             </label>}
             <button disabled={loading} className="primary">
-              {loading ? "Working..." : {
+              {t(loading ? "Working..." : {
                 login: "Login", register: "Create Account", forgot: "Send Reset Link", reset: "Set New Password",
-              }[authMode]}
+              }[authMode])}
             </button>
           </form>
           {authMode === "login" && (
@@ -860,14 +864,14 @@ function App() {
               setAuthMode("forgot");
               setError("");
               setMessage("");
-            }}>Forgot password?</button>
+            }}>{t("Forgot password?")}</button>
           )}
           {(authMode === "forgot" || authMode === "reset") && (
             <button type="button" className="link-button" onClick={() => {
               setAuthMode("login");
               setError("");
               setMessage("");
-            }}>Back to sign in</button>
+            }}>{t("Back to sign in")}</button>
           )}
           {isNative && <InvitationEntry onApply={(code) => {
             setInviteCode(code);
@@ -876,8 +880,8 @@ function App() {
           }} />}
           <Status error={error} message={message} />
           <p className="muted auth-legal">
-            {authMode === "register" && "By creating an account you agree to the "}
-            <a href={`${runtimeConfig.publicAppURL}/privacy.html`} target="_blank" rel="noopener">Privacy &amp; Terms</a>
+            {authMode === "register" && t("By creating an account you agree to the ")}
+            <a href={`${runtimeConfig.publicAppURL}/privacy.html`} target="_blank" rel="noopener">{t("Privacy & Terms")}</a>
           </p>
         </section>
       </main>
@@ -895,24 +899,24 @@ function App() {
     <main className={`app-shell${user.role === "landlord" ? " has-bottom-nav" : ""}`}>
       <header className="topbar">
         <div className="header-greeting">
-          <p className="eyebrow">Rental Management</p>
-          <h1>Welcome, {profileDisplayName}</h1>
-          <p className="muted">{user.role === "landlord" ? "Landlord dashboard" : "Tenant account"}</p>
+          <p className="eyebrow">{t("Rental Management")}</p>
+          <h1>{t("Welcome, {{name}}", { name: profileDisplayName })}</h1>
+          <p className="muted">{t(user.role === "landlord" ? "Landlord dashboard" : "Tenant account")}</p>
         </div>
         <div className="header-actions">
         {user.role === "landlord" && (
           <button type="button" className="secondary refresh-data" disabled={loading} onClick={() => void withStatus(loadLandlordData, "Data refreshed.")}>
-            Refresh
+            {t("Refresh")}
           </button>
         )}
         <div className="profile-menu" ref={profileMenuRef}>
           <button
             type="button"
             className="profile-trigger"
-            aria-label="Open profile menu"
+            aria-label={t("Open profile menu")}
             aria-expanded={profileMenuOpen}
             aria-controls={profileMenuOpen ? "profile-panel" : undefined}
-            title="Profile"
+            title={t("Profile")}
             onClick={() => setProfileMenuOpen((isOpen) => !isOpen)}
           >
             <span className="profile-icon" aria-hidden="true">
@@ -937,30 +941,31 @@ function App() {
 
               <div className="detail-grid compact">
                 <div>
-                  <span>Full name</span>
+                  <span>{t("Full name")}</span>
                   <strong>{user.full_name}</strong>
                 </div>
                 <div>
-                  <span>Display name</span>
-                  <strong>{user.display_name || "Not set"}</strong>
+                  <span>{t("Display name")}</span>
+                  <strong>{user.display_name || t("Not set")}</strong>
                 </div>
                 <div>
-                  <span>Role</span>
-                  <strong>{user.role}</strong>
+                  <span>{t("Role")}</span>
+                  <strong>{t(user.role)}</strong>
                 </div>
               </div>
 
+              <LanguageSelector />
               <button type="button" onClick={openProfileModal} className="primary logout-button">
-                Edit Profile
+                {t("Edit Profile")}
               </button>
               {user.role === "landlord" && (
                 <button type="button" className="secondary logout-button" onClick={() => {
                   setProfileMenuOpen(false);
                   setMcpKeysOpen(true);
-                }}>MCP API Keys</button>
+                }}>{t("MCP API Keys")}</button>
               )}
               <button onClick={logout} className="secondary logout-button">
-                Logout
+                {t("Logout")}
               </button>
             </section>
           )}
@@ -974,13 +979,13 @@ function App() {
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
           <form onSubmit={submitProfileUpdate} className="card form modal-card">
             <div className="card-header">
-              <h2 id="profile-modal-title">Edit Profile</h2>
+              <h2 id="profile-modal-title">{t("Edit Profile")}</h2>
               <button type="button" className="secondary" disabled={loading} onClick={closeProfileModal}>
-                Close
+                {t("Close")}
               </button>
             </div>
             <label>
-              Full name
+              {t("Full name")}
               <input
                 required
                 maxLength={255}
@@ -989,10 +994,10 @@ function App() {
               />
             </label>
             <label>
-              Display name
+              {t("Display name")}
               <input
                 maxLength={255}
-                placeholder="Name shown in the app"
+                placeholder={t("Name shown in the app")}
                 value={profileForm.display_name}
                 onChange={(event) => setProfileForm({ ...profileForm, display_name: event.target.value })}
               />
@@ -1007,10 +1012,10 @@ function App() {
               <WebPushSettings loading={loading} onBusyChange={setLoading} />
             )}
             <div className="form-section">
-              <h3>Change password</h3>
-              <p className="muted">Leave password fields blank if you only want to update your names.</p>
+              <h3>{t("Change password")}</h3>
+              <p className="muted">{t("Leave password fields blank if you only want to update your names.")}</p>
               <label>
-                Current password
+                {t("Current password")}
                 <input
                   type="password"
                   value={profileForm.current_password}
@@ -1018,7 +1023,7 @@ function App() {
                 />
               </label>
               <label>
-                New password
+                {t("New password")}
                 <input
                   minLength={8}
                   maxLength={72}
@@ -1028,7 +1033,7 @@ function App() {
                 />
               </label>
               <label>
-                Confirm new password
+                {t("Confirm new password")}
                 <input
                   minLength={8}
                   maxLength={72}
@@ -1040,10 +1045,10 @@ function App() {
             </div>
             <div className="modal-actions">
               <button disabled={loading} className="primary">
-                Save Profile
+                {t("Save Profile")}
               </button>
               <button type="button" className="secondary" disabled={loading} onClick={closeProfileModal}>
-                Cancel
+                {t("Cancel")}
               </button>
             </div>
           </form>
@@ -1054,8 +1059,8 @@ function App() {
 
       {user.role !== "landlord" ? (
         <section className="card">
-          <h2>Tenant Portal</h2>
-          <p className="muted">Tenant rental viewing is available through the backend API at /tenant/bills.</p>
+          <h2>{t("Tenant Portal")}</h2>
+          <p className="muted">{t("Tenant rental viewing is available through the backend API at /tenant/bills.")}</p>
         </section>
       ) : (
         <>
@@ -1074,10 +1079,10 @@ function App() {
                 }}
               >
               <form onSubmit={submitProperty} className="form" aria-busy={loading}>
-                <h2 id="property-dialog-title">{editingPropertyId ? "Edit Property" : "Add Property"}</h2>
-                {error && <p className="alert error" role="alert">{error}</p>}
+                <h2 id="property-dialog-title">{t(editingPropertyId ? "Edit Property" : "Add Property")}</h2>
+                {error && <p className="alert error" role="alert">{t(error)}</p>}
                 <label>
-                  Name
+                  {t("Name")}
                   <input
                     autoFocus
                     disabled={loading}
@@ -1087,7 +1092,7 @@ function App() {
                   />
                 </label>
                 <label>
-                  Address
+                  {t("Address")}
                   <input
                     disabled={loading}
                     required
@@ -1096,7 +1101,7 @@ function App() {
                   />
                 </label>
                 <label>
-                  Description
+                  {t("Description")}
                   <textarea
                     disabled={loading}
                     value={propertyForm.description}
@@ -1105,10 +1110,10 @@ function App() {
                 </label>
                 <div className="modal-actions">
                   <button type="button" className="secondary" disabled={loading} onClick={() => setPropertyModalOpen(false)}>
-                    Cancel
+                    {t("Cancel")}
                   </button>
                   <button disabled={loading} className="primary">
-                    {loading ? "Saving..." : editingPropertyId ? "Save Property" : "Add Property"}
+                    {t(loading ? "Saving..." : editingPropertyId ? "Save Property" : "Add Property")}
                   </button>
                 </div>
               </form>
@@ -1116,7 +1121,7 @@ function App() {
             )}
               <section className="card">
                 <div className="card-header">
-                  <h2>Properties</h2>
+                  <h2>{t("Properties")}</h2>
                   <button
                     className="primary"
                     disabled={loading}
@@ -1128,7 +1133,7 @@ function App() {
                       setPropertyModalOpen(true);
                     }}
                   >
-                    Add Property
+                    {t("Add Property")}
                   </button>
                 </div>
                 <DataTable label="Properties" empty="No properties yet." headers={["Property", "Address", "Description", "Actions"]}>
@@ -1152,7 +1157,7 @@ function App() {
                               className="property-expand-trigger"
                               aria-expanded={expanded}
                               aria-controls={`property-units-${property.id}`}
-                              aria-label={`${expanded ? "Hide" : "Show"} units for ${property.name}`}
+                              aria-label={t(expanded ? "Hide units for {{name}}" : "Show units for {{name}}", { name: property.name })}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 toggleUnits();
@@ -1160,7 +1165,7 @@ function App() {
                             >
                               <span className="property-chevron" aria-hidden="true" />
                               <span>{property.name}</span>
-                              <span className="property-unit-count">{propertyUnits.length} {propertyUnits.length === 1 ? "unit" : "units"}</span>
+                              <span className="property-unit-count">{t(propertyUnits.length === 1 ? "{{count}} unit" : "{{count}} units", { count: propertyUnits.length })}</span>
                             </button>
                           ) : <span>{property.name}</span>}
                       </td>
@@ -1170,7 +1175,7 @@ function App() {
                         <button
                           disabled={loading}
                           aria-haspopup="dialog"
-                          aria-label={`Add unit to ${property.name}`}
+                          aria-label={t("Add unit to {{name}}", { name: property.name })}
                           onClick={() => {
                             setEditingUnitId(null);
                             setUnitForm({ ...emptyUnit, property_id: String(property.id) });
@@ -1178,7 +1183,7 @@ function App() {
                             setUnitModalOpen(true);
                           }}
                         >
-                          Add Unit
+                          {t("Add Unit")}
                         </button>
                         <button
                           disabled={loading}
@@ -1194,25 +1199,25 @@ function App() {
                             setPropertyModalOpen(true);
                           }}
                         >
-                          Edit
+                          {t("Edit")}
                         </button>
                         <button
                           className="danger"
                           onClick={() =>
-                            confirmDelete(`property "${property.name}"`) &&
+                            confirmDelete(t("property \"{{name}}\"", { name: property.name })) &&
                             withStatus(() => api.deleteProperty(property.id).then(loadLandlordData), "Property deleted.")
                           }
                         >
-                          Delete
+                          {t("Delete")}
                         </button>
                       </td>
                     </tr>
                     {propertyUnits.length > 0 && (
                     <tr className="property-units-row" id={`property-units-${property.id}`} hidden={!expanded}>
                       <td colSpan={4}>
-                        <section className="property-units" aria-label={`Units in ${property.name}`}>
+                        <section className="property-units" aria-label={t("Units in {{name}}", { name: property.name })}>
                           <DataTable
-                            label={`Units in ${property.name}`}
+                            label={t("Units in {{name}}", { name: property.name })}
                             empty="No units in this property yet. Use Add Unit to create one."
                             headers={["Unit", "Description", "Actions"]}
                             className="compact-table"
@@ -1226,7 +1231,7 @@ function App() {
                                     <button
                                       disabled={loading}
                                       aria-haspopup="dialog"
-                                      aria-label={`Edit unit ${unit.name} in ${property.name}`}
+                                      aria-label={t("Edit unit {{unit}} in {{property}}", { unit: unit.name, property: property.name })}
                                       onClick={() => {
                                         setEditingUnitId(unit.id);
                                         setUnitForm({
@@ -1238,18 +1243,18 @@ function App() {
                                         setUnitModalOpen(true);
                                       }}
                                     >
-                                      Edit
+                                      {t("Edit")}
                                     </button>
                                     <button
                                       className="danger"
                                       disabled={loading}
-                                      aria-label={`Delete unit ${unit.name} in ${property.name}`}
+                                      aria-label={t("Delete unit {{unit}} in {{property}}", { unit: unit.name, property: property.name })}
                                       onClick={() =>
-                                        confirmDelete(`unit "${unit.name}"`) &&
+                                        confirmDelete(t("unit \"{{name}}\"", { name: unit.name })) &&
                                         withStatus(() => api.deleteUnit(unit.id).then(loadLandlordData), "Unit deleted.")
                                       }
                                     >
-                                      Delete
+                                      {t("Delete")}
                                     </button>
                                   </div>
                                 </td>
@@ -1277,25 +1282,25 @@ function App() {
                 }}
               >
               <form onSubmit={submitUnit} className="form" aria-busy={loading}>
-                <h2 id="unit-dialog-title">{editingUnitId ? "Edit Unit" : "Add Unit"}</h2>
-                {error && <p className="alert error" role="alert">{error}</p>}
+                <h2 id="unit-dialog-title">{t(editingUnitId ? "Edit Unit" : "Add Unit")}</h2>
+                {error && <p className="alert error" role="alert">{t(error)}</p>}
                 <label>
-                  Property
+                  {t("Property")}
                   <input readOnly value={propertyNameById.get(Number(unitForm.property_id)) ?? ""} />
                 </label>
                 <label>
-                  Unit name
+                  {t("Unit name")}
                   <input
                     autoFocus
                     disabled={loading}
                     required
-                    placeholder="Example: Unit 101"
+                    placeholder={t("Example: Unit 101")}
                     value={unitForm.name}
                     onChange={(event) => setUnitForm({ ...unitForm, name: event.target.value })}
                   />
                 </label>
                 <label>
-                  Description
+                  {t("Description")}
                   <textarea
                     disabled={loading}
                     value={unitForm.description}
@@ -1304,10 +1309,10 @@ function App() {
                 </label>
                 <div className="modal-actions">
                   <button type="button" className="secondary" disabled={loading} onClick={() => setUnitModalOpen(false)}>
-                    Cancel
+                    {t("Cancel")}
                   </button>
                   <button disabled={loading} className="primary">
-                    {loading ? "Saving..." : editingUnitId ? "Save Unit" : "Add Unit"}
+                    {t(loading ? "Saving..." : editingUnitId ? "Save Unit" : "Add Unit")}
                   </button>
                 </div>
               </form>
@@ -1329,10 +1334,10 @@ function App() {
                 }}
               >
               <form onSubmit={submitTenant} className="form" aria-busy={loading}>
-                <h2 id="tenant-dialog-title">{editingTenantId ? "Edit Tenant" : "Add Tenant"}</h2>
-                {error && <p className="alert error" role="alert">{error}</p>}
+                <h2 id="tenant-dialog-title">{t(editingTenantId ? "Edit Tenant" : "Add Tenant")}</h2>
+                {error && <p className="alert error" role="alert">{t(error)}</p>}
                 <label>
-                  Full name
+                  {t("Full name")}
                   <input
                     autoFocus
                     disabled={loading}
@@ -1342,7 +1347,7 @@ function App() {
                   />
                 </label>
                 <label>
-                  Email
+                  {t("Email")}
                   <input
                     type="email"
                     disabled={loading}
@@ -1351,19 +1356,19 @@ function App() {
                   />
                 </label>
                 <label>
-                  Phone
+                  {t("Phone")}
                   <input disabled={loading} value={tenantForm.phone} onChange={(event) => setTenantForm({ ...tenantForm, phone: event.target.value })} />
                 </label>
                 <label>
-                  Notes
+                  {t("Notes")}
                   <textarea disabled={loading} value={tenantForm.notes} onChange={(event) => setTenantForm({ ...tenantForm, notes: event.target.value })} />
                 </label>
                 <div className="modal-actions">
                   <button type="button" className="secondary" disabled={loading} onClick={() => setTenantModalOpen(false)}>
-                    Cancel
+                    {t("Cancel")}
                   </button>
                   <button disabled={loading} className="primary">
-                    {loading ? "Saving..." : editingTenantId ? "Save Tenant" : "Add Tenant"}
+                    {t(loading ? "Saving..." : editingTenantId ? "Save Tenant" : "Add Tenant")}
                   </button>
                 </div>
               </form>
@@ -1371,7 +1376,7 @@ function App() {
               )}
               <section className="card">
                 <div className="card-header">
-                  <h2>Tenants</h2>
+                  <h2>{t("Tenants")}</h2>
                   <button
                     className="primary"
                     disabled={loading}
@@ -1383,7 +1388,7 @@ function App() {
                       setTenantModalOpen(true);
                     }}
                   >
-                    Add Tenant
+                    {t("Add Tenant")}
                   </button>
                 </div>
                 <DataTable label="Tenants" empty="No tenants yet." headers={["Tenant ID", "Full Name", "Email", "Phone", "Deposit Paid", "Actions"]} className="compact-table">
@@ -1410,16 +1415,16 @@ function App() {
                             setTenantModalOpen(true);
                           }}
                         >
-                          Edit
+                          {t("Edit")}
                         </button>
                         <button
                           className="danger"
                           onClick={() =>
-                            confirmDelete(`tenant "${tenant.full_name}"`) &&
+                            confirmDelete(t("tenant \"{{name}}\"", { name: tenant.full_name })) &&
                             withStatus(() => api.deleteTenant(tenant.id).then(loadLandlordData), "Tenant deleted.")
                           }
                         >
-                          Delete
+                          {t("Delete")}
                         </button>
                       </td>
                     </tr>
@@ -1434,11 +1439,11 @@ function App() {
               <section className="card leases-section">
                 <div className="card-header leases-header">
                   <div className="leases-heading">
-                    <h2>Leases</h2>
-                    <span className="muted">{leases.length} leases</span>
+                    <h2>{t("Leases")}</h2>
+                    <span className="muted">{t("{{count}} leases", { count: leases.length })}</span>
                   </div>
                   <button className="primary" onClick={openAddLeaseModal}>
-                    Add Lease
+                    {t("Add Lease")}
                   </button>
                 </div>
                 <DataTable
@@ -1448,9 +1453,9 @@ function App() {
                   className="compact-table lease-table"
                 >
                   {leases.map((lease) => {
-                    const propertyName = propertyNameById.get(lease.property_id) ?? `Property #${lease.property_id}`;
-                    const unitName = lease.unit_id ? (unitNameById.get(lease.unit_id) ?? `Unit #${lease.unit_id}`) : "Whole property";
-                    const tenantNames = lease.tenants.map((tenant) => tenantNameById.get(tenant.tenant_id) ?? `Tenant #${tenant.tenant_id}`).join(", ");
+                    const propertyName = propertyNameById.get(lease.property_id) ?? t("Property #{{id}}", { id: lease.property_id });
+                    const unitName = lease.unit_id ? (unitNameById.get(lease.unit_id) ?? t("Unit #{{id}}", { id: lease.unit_id })) : t("Whole property");
+                    const tenantNames = lease.tenants.map((tenant) => tenantNameById.get(tenant.tenant_id) ?? t("Tenant #{{id}}", { id: tenant.tenant_id })).join(", ");
                     return (
                       <tr key={lease.id}>
                         <td>#{lease.id}</td>
@@ -1459,24 +1464,24 @@ function App() {
                         <td>{lease.start_date}</td>
                         <td>{lease.end_date}</td>
                         <td className="numeric">${lease.monthly_rent}</td>
-                        <td className="lease-text lease-tenant-names" title={tenantNames || "No tenants"}>{lease.tenants.length}{tenantNames ? `: ${tenantNames}` : ""}</td>
+                        <td className="lease-text lease-tenant-names" title={tenantNames || t("No tenants")}>{lease.tenants.length}{tenantNames ? `: ${tenantNames}` : ""}</td>
                         <td className="lease-text" title={lease.notes || undefined}>{lease.notes || "-"}</td>
                         <td>
                           <div className="compact-row-actions">
-                            <button type="button" className="bill-icon-button" title="View lease details" aria-label={`View details for lease #${lease.id}`} aria-haspopup="dialog" onClick={() => setLeaseDetailsId(lease.id)}>
+                            <button type="button" className="bill-icon-button" title={t("View lease details")} aria-label={t("View details for lease #{{id}}", { id: lease.id })} aria-haspopup="dialog" onClick={() => setLeaseDetailsId(lease.id)}>
                               <BillActionIcon name="details" />
                             </button>
-                            <button type="button" className="bill-icon-button" disabled={loading} title="Edit lease" aria-label={`Edit lease #${lease.id}`} aria-haspopup="dialog" onClick={() => openEditLeaseModal(lease)}>
+                            <button type="button" className="bill-icon-button" disabled={loading} title={t("Edit lease")} aria-label={t("Edit lease #{{id}}", { id: lease.id })} aria-haspopup="dialog" onClick={() => openEditLeaseModal(lease)}>
                               <BillActionIcon name="edit" />
                             </button>
                             <button
                               type="button"
                               className="bill-icon-button bill-icon-delete"
                               disabled={loading}
-                              title="Delete lease"
-                              aria-label={`Delete lease #${lease.id}`}
+                              title={t("Delete lease")}
+                              aria-label={t("Delete lease #{{id}}", { id: lease.id })}
                               onClick={() => {
-                                if (confirmDelete(`lease #${lease.id}`)) {
+                                if (confirmDelete(t("lease #{{id}}", { id: lease.id }))) {
                                   void withStatus(() => api.deleteLease(lease.id).then(loadLandlordData), "Lease deleted.");
                                 }
                               }}
@@ -1495,8 +1500,8 @@ function App() {
                 <LeaseDetailsDialog
                   key={leaseDetails.id}
                   lease={leaseDetails}
-                  propertyName={propertyNameById.get(leaseDetails.property_id) ?? `Property #${leaseDetails.property_id}`}
-                  unitName={leaseDetails.unit_id ? (unitNameById.get(leaseDetails.unit_id) ?? `Unit #${leaseDetails.unit_id}`) : "Whole property"}
+                  propertyName={propertyNameById.get(leaseDetails.property_id) ?? t("Property #{{id}}", { id: leaseDetails.property_id })}
+                  unitName={leaseDetails.unit_id ? (unitNameById.get(leaseDetails.unit_id) ?? t("Unit #{{id}}", { id: leaseDetails.unit_id })) : t("Whole property")}
                   tenantNames={tenantNameById}
                   onClose={() => setLeaseDetailsId(null)}
                 />
@@ -1506,19 +1511,19 @@ function App() {
                 <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="lease-modal-title">
                   <form onSubmit={submitLease} className="card form modal-card">
                     <div className="card-header">
-                      <h2 id="lease-modal-title">{editingLeaseId ? "Edit Lease" : "Add Lease"}</h2>
+                      <h2 id="lease-modal-title">{t(editingLeaseId ? "Edit Lease" : "Add Lease")}</h2>
                       <button type="button" className="secondary" onClick={closeLeaseModal}>
-                        Close
+                        {t("Close")}
                       </button>
                     </div>
                     <label>
-                      Property
+                      {t("Property")}
                       <select
                         required
                         value={leaseForm.property_id}
                         onChange={(event) => setLeaseForm({ ...leaseForm, property_id: event.target.value, unit_id: "" })}
                       >
-                        <option value="">Select property</option>
+                        <option value="">{t("Select property")}</option>
                         {properties.map((property) => (
                           <option key={property.id} value={property.id}>
                             {property.name}
@@ -1527,14 +1532,14 @@ function App() {
                       </select>
                     </label>
                     <label>
-                      Unit
+                      {t("Unit")}
                       <select
                         value={leaseForm.unit_id}
                         disabled={!leaseForm.property_id || unitsForLeaseProperty.length === 0}
                         onChange={(event) => setLeaseForm({ ...leaseForm, unit_id: event.target.value })}
                       >
                         <option value="">
-                          {unitsForLeaseProperty.length === 0 ? "No units for selected property" : "Whole property / no unit"}
+                          {t(unitsForLeaseProperty.length === 0 ? "No units for selected property" : "Whole property / no unit")}
                         </option>
                         {unitsForLeaseProperty.map((unit) => (
                           <option key={unit.id} value={unit.id}>
@@ -1544,7 +1549,7 @@ function App() {
                       </select>
                     </label>
                     <label>
-                      Tenants not bound to another lease
+                      {t("Tenants not bound to another lease")}
                       <div className="dropdown">
                         <button
                           type="button"
@@ -1552,14 +1557,14 @@ function App() {
                           onClick={() => setTenantDropdownOpen((current) => !current)}
                         >
                           {selectedLeaseTenants.length
-                            ? `${selectedLeaseTenants.length} tenant${selectedLeaseTenants.length > 1 ? "s" : ""} selected`
-                            : "Choose tenants"}
+                            ? t(selectedLeaseTenants.length === 1 ? "{{count}} tenant selected" : "{{count}} tenants selected", { count: selectedLeaseTenants.length })
+                            : t("Choose tenants")}
                           <span aria-hidden="true">▾</span>
                         </button>
                         {tenantDropdownOpen && (
                           <div className="dropdown-menu">
                             {availableLeaseTenants.length === 0 ? (
-                              <p className="dropdown-empty">No available tenants. Add a tenant or free one from another lease.</p>
+                              <p className="dropdown-empty">{t("No available tenants. Add a tenant or free one from another lease.")}</p>
                             ) : (
                               availableLeaseTenants.map((tenant) => {
                                 const value = String(tenant.id);
@@ -1591,12 +1596,12 @@ function App() {
                         )}
                       </div>
                       <span className="help-text">
-                        Tenants already used by another lease are hidden. Click a selected chip to remove it, then enter deposit.
+                        {t("Tenants already used by another lease are hidden. Click a selected chip to remove it, then enter deposit.")}
                       </span>
                     </label>
                     {selectedLeaseTenants.length > 0 && (
                       <div className="tenant-terms">
-                        <h3>Tenant deposit</h3>
+                        <h3>{t("Tenant deposit")}</h3>
                         {selectedLeaseTenants.map((tenant) => {
                           const terms = leaseForm.tenants.find((term) => term.tenant_id === String(tenant.id));
                           return (
@@ -1607,7 +1612,7 @@ function App() {
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                placeholder="Deposit"
+                                placeholder={t("Deposit")}
                                 value={terms?.deposit ?? ""}
                                 onChange={(event) => updateLeaseTenantDeposit(tenant.id, event.target.value)}
                               />
@@ -1618,7 +1623,7 @@ function App() {
                     )}
                     <div className="two-columns">
                       <label>
-                        Start date
+                        {t("Start date")}
                         <DateInput
                           required
                           value={leaseForm.start_date}
@@ -1626,7 +1631,7 @@ function App() {
                         />
                       </label>
                       <label>
-                        End date
+                        {t("End date")}
                         <DateInput
                           required
                           value={leaseForm.end_date}
@@ -1635,7 +1640,7 @@ function App() {
                       </label>
                     </div>
                     <label>
-                      Monthly rent
+                      {t("Monthly rent")}
                       <input
                         required
                         type="number"
@@ -1646,15 +1651,15 @@ function App() {
                       />
                     </label>
                     <label>
-                      Notes
+                      {t("Notes")}
                       <textarea value={leaseForm.notes} onChange={(event) => setLeaseForm({ ...leaseForm, notes: event.target.value })} />
                     </label>
                     <div className="modal-actions">
                       <button disabled={loading} className="primary">
-                        {editingLeaseId ? "Save Lease" : "Add Lease"}
+                        {t(editingLeaseId ? "Save Lease" : "Add Lease")}
                       </button>
                       <button type="button" className="secondary" onClick={closeLeaseModal}>
-                        Cancel
+                        {t("Cancel")}
                       </button>
                     </div>
                   </form>
@@ -1668,46 +1673,46 @@ function App() {
               <section className="card property-bills-section">
                 <div className="card-header property-bills-header">
                   <div className="property-bills-heading">
-                    <h2>Property Bills</h2>
+                    <h2>{t("Property Bills")}</h2>
                     <span className="bill-result-count" role="status">
-                      {visiblePropertyBills.length} of {propertyBills.length} bills
+                      {t("{{visible}} of {{total}} bills", { visible: visiblePropertyBills.length, total: propertyBills.length })}
                     </span>
                   </div>
                   <div className="header-actions">
                     <button className="primary" onClick={openBillModal}>
-                      Create Property Bill
+                      {t("Create Property Bill")}
                     </button>
                   </div>
                 </div>
-                <div className="property-bills-toolbar" role="group" aria-label="Property bill filters">
+                <div className="property-bills-toolbar" role="group" aria-label={t("Property bill filters")}>
                   <button
                     ref={billFilterButtonRef}
                     className="secondary bill-filter-trigger"
                     aria-haspopup="dialog"
-                    title="Edit property bill filters"
+                    title={t("Edit property bill filters")}
                     onClick={() => setBillFilterOpen(true)}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
                       <path d="M3 4h18l-7 8v7l-4 2v-9Z" />
                     </svg>
-                    Filters{activeBillFilters.length > 0 ? ` (${activeBillFilters.length})` : ""}
+                    {t("Filters")}{activeBillFilters.length > 0 ? ` (${activeBillFilters.length})` : ""}
                   </button>
                   <button className="secondary" onClick={() => setBillFilter(defaultPropertyBillFilters())}>
-                    This Month Unpaid
+                    {t("This Month Unpaid")}
                   </button>
                   <button
                     className="secondary"
                     disabled={activeBillFilters.length === 0}
-                    aria-label="Clear bill filters"
+                    aria-label={t("Clear bill filters")}
                     onClick={() => setBillFilter({ ...emptyPropertyBillFilters })}
                   >
-                    Clear
+                    {t("Clear")}
                   </button>
                   <span
                     className="bill-filter-summary"
-                    title={activeBillFilters.length > 0 ? activeBillFilters.join(" | ") : "All property bills"}
+                    title={activeBillFilters.length > 0 ? activeBillFilters.join(" | ") : t("All property bills")}
                   >
-                    {activeBillFilters.length > 0 ? activeBillFilters.join(" | ") : "All property bills"}
+                    {activeBillFilters.length > 0 ? activeBillFilters.join(" | ") : t("All property bills")}
                   </span>
                 </div>
                 <DataTable
@@ -1720,25 +1725,25 @@ function App() {
                   {visiblePropertyBills.map((bill) => (
                     <tr key={bill.id}>
                       <td className="bill-description" title={bill.title}><strong>{bill.title}</strong></td>
-                      <td className="property-name" title={propertyNameById.get(bill.property_id) ?? `Property #${bill.property_id}`}>
-                        {propertyNameById.get(bill.property_id) ?? `Property #${bill.property_id}`}
+                      <td className="property-name" title={propertyNameById.get(bill.property_id) ?? t("Property #{{id}}", { id: bill.property_id })}>
+                        {propertyNameById.get(bill.property_id) ?? t("Property #{{id}}", { id: bill.property_id })}
                       </td>
-                      <td>{billCategoryLabels[bill.bill_type]}</td>
+                      <td>{t(billCategoryLabels[bill.bill_type])}</td>
                       <td className="numeric">${bill.amount_due}</td>
                       <td>{bill.due_date}</td>
-                      <td>{billRecurrenceLabels[bill.recurrence]}</td>
+                      <td>{t(billRecurrenceLabels[bill.recurrence])}</td>
                       <td>
-                        <span className={`status ${bill.status === "paid" ? "paid" : "open"}`}>{bill.status}</span>
+                        <span className={`status ${bill.status === "paid" ? "paid" : "open"}`}>{t(bill.status)}</span>
                       </td>
-                      <td>{bill.generated_at ? "Generated" : "Not generated"}</td>
+                      <td>{t(bill.generated_at ? "Generated" : "Not generated")}</td>
                       <td className="bill-notes" title={bill.notes || undefined}>{bill.notes || "-"}</td>
                       <td>
                         <div className="compact-row-actions">
                           <button
                             className="bill-icon-button"
                             disabled={loading}
-                            aria-label={`Edit property bill "${bill.title}"`}
-                            title="Edit bill"
+                            aria-label={t("Edit property bill \"{{title}}\"", { title: bill.title })}
+                            title={t("Edit bill")}
                             onClick={() =>
                               setBillEdit({ id: bill.id, title: bill.title, amount_due: bill.amount_due, due_date: bill.due_date })
                             }
@@ -1748,8 +1753,8 @@ function App() {
                           <button
                             className="bill-icon-button"
                             disabled={loading}
-                            title={bill.status === "paid" ? "Mark unpaid" : "Mark paid"}
-                            aria-label={`Mark property bill "${bill.title}" ${bill.status === "paid" ? "unpaid" : "paid"}`}
+                            title={t(bill.status === "paid" ? "Mark unpaid" : "Mark paid")}
+                            aria-label={t("Mark property bill \"{{title}}\" {{status}}", { title: bill.title, status: t(bill.status === "paid" ? "unpaid" : "paid") })}
                             onClick={() => updatePropertyBillStatus(bill, bill.status === "paid" ? "unpaid" : "paid")}
                           >
                             <BillActionIcon name={bill.status === "paid" ? "unpaid" : "paid"} />
@@ -1759,8 +1764,8 @@ function App() {
                               className="bill-icon-button"
                               disabled={loading}
                               aria-haspopup="dialog"
-                              aria-label={`Extend repeated bill "${bill.title}"`}
-                              title="Extend repeated bill"
+                              aria-label={t("Extend repeated bill \"{{title}}\"", { title: bill.title })}
+                              title={t("Extend repeated bill")}
                               onClick={() => setExtensionBill(bill)}
                             >
                               <BillActionIcon name="extend" />
@@ -1769,8 +1774,8 @@ function App() {
                           <button
                             className="bill-icon-button"
                             disabled={loading || Boolean(bill.generated_at)}
-                            aria-label={`Generate tenant bills for "${bill.title}"`}
-                            title={bill.generated_at ? "Tenant bills already generated" : "Generate tenant bills"}
+                            aria-label={t("Generate tenant bills for \"{{title}}\"", { title: bill.title })}
+                            title={t(bill.generated_at ? "Tenant bills already generated" : "Generate tenant bills")}
                             onClick={(event) => {
                               tenantChargeTrigger.current = event.currentTarget;
                               setTenantChargeBillId(bill.id);
@@ -1781,10 +1786,10 @@ function App() {
                           <button
                             className="bill-icon-button bill-icon-delete"
                             disabled={loading}
-                            aria-label={`Delete property bill "${bill.title}"`}
-                            title="Delete bill"
+                            aria-label={t("Delete property bill \"{{title}}\"", { title: bill.title })}
+                            title={t("Delete bill")}
                             onClick={() =>
-                              confirmDelete(`property bill "${bill.title}"`) &&
+                              confirmDelete(t("property bill \"{{name}}\"", { name: bill.title })) &&
                               withStatus(() => api.deletePropertyBill(bill.id).then(loadLandlordData), "Property bill deleted.")
                             }
                           >
@@ -1805,7 +1810,7 @@ function App() {
                     setPropertyBills((current) => [...current, ...created]);
                     setExtensionBill(null);
                     setError("");
-                    setMessage(`${created.length} property bills generated. Active filters may hide new bills.`);
+                    setMessage(t("{{count}} property bills generated. Active filters may hide new bills.", { count: created.length }));
                   }}
                 />
               )}
@@ -1833,11 +1838,11 @@ function App() {
               {billEdit && (
                 <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bill-edit-title">
                   <form onSubmit={submitBillEdit} className="card form modal-card">
-                    <h2 id="bill-edit-title">Edit Bill</h2>
+                    <h2 id="bill-edit-title">{t("Edit Bill")}</h2>
                     <p>{billEdit.title}</p>
-                    <p className="muted">Updates only this property bill, not other recurring bills or existing tenant bills.</p>
+                    <p className="muted">{t("Updates only this property bill, not other recurring bills or existing tenant bills.")}</p>
                     <label>
-                      Amount due
+                      {t("Amount due")}
                       <input
                         autoFocus
                         required
@@ -1850,7 +1855,7 @@ function App() {
                       />
                     </label>
                     <label>
-                      Due date
+                      {t("Due date")}
                       <DateInput
                         required
                         max="9999-12-31"
@@ -1861,10 +1866,10 @@ function App() {
                     </label>
                     <div className="modal-actions">
                       <button className="primary" disabled={loading || !billEdit.amount_due || !billEdit.due_date}>
-                        Save Bill
+                        {t("Save Bill")}
                       </button>
                       <button type="button" className="secondary" disabled={loading} onClick={() => setBillEdit(null)}>
-                        Cancel
+                        {t("Cancel")}
                       </button>
                     </div>
                   </form>
@@ -1875,13 +1880,13 @@ function App() {
                 <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="bill-modal-title">
                   <form onSubmit={submitManualBill} className="card form modal-card">
                     <div className="card-header">
-                      <h2 id="bill-modal-title">Create Property Bill</h2>
+                      <h2 id="bill-modal-title">{t("Create Property Bill")}</h2>
                       <button type="button" className="secondary" onClick={closeBillModal}>
-                        Close
+                        {t("Close")}
                       </button>
                     </div>
                     <label>
-                      Property
+                      {t("Property")}
                       <select
                         required
                         value={manualBillForm.property_id}
@@ -1892,7 +1897,7 @@ function App() {
                           })
                         }
                       >
-                        <option value="">Select property</option>
+                        <option value="">{t("Select property")}</option>
                         {properties.map((property) => (
                           <option key={property.id} value={property.id}>
                             {property.name}
@@ -1901,7 +1906,7 @@ function App() {
                       </select>
                     </label>
                     <label>
-                      Bill category
+                      {t("Bill category")}
                       <select
                         value={manualBillForm.bill_type}
                         onChange={(event) =>
@@ -1912,21 +1917,21 @@ function App() {
                         }
                       >
                         {Object.entries(billCategoryLabels).map(([value, label]) => (
-                          <option key={value} value={value}>{label}</option>
+                          <option key={value} value={value}>{t(label)}</option>
                         ))}
                       </select>
                     </label>
                     <label>
-                      Bill title
+                      {t("Bill title")}
                       <input
                         required
-                        placeholder="Example: Utility charge"
+                        placeholder={t("Example: Utility charge")}
                         value={manualBillForm.title}
                         onChange={(event) => setManualBillForm({ ...manualBillForm, title: event.target.value })}
                       />
                     </label>
                     <label>
-                      Amount due
+                      {t("Amount due")}
                       <input
                         required
                         type="number"
@@ -1937,7 +1942,7 @@ function App() {
                       />
                     </label>
                     <label>
-                      Repeat
+                      {t("Repeat")}
                       <select
                         value={manualBillForm.recurrence}
                         onChange={(event) =>
@@ -1947,17 +1952,17 @@ function App() {
                           })
                         }
                       >
-                        <option value="one_time">One-time bill</option>
-                        <option value="monthly">Repeated monthly bill</option>
-                        <option value="bi_monthly">Repeated bi-monthly bill (every two months)</option>
-                        <option value="quarterly">Repeated quarterly bill (every three months)</option>
-                        <option value="semi_annually">Repeated bill every six months</option>
-                        <option value="annually">Repeated annual bill</option>
-                        <option value="custom_period">Bill for a specified period</option>
+                        <option value="one_time">{t("One-time bill")}</option>
+                        <option value="monthly">{t("Repeated monthly bill")}</option>
+                        <option value="bi_monthly">{t("Repeated bi-monthly bill (every two months)")}</option>
+                        <option value="quarterly">{t("Repeated quarterly bill (every three months)")}</option>
+                        <option value="semi_annually">{t("Repeated bill every six months")}</option>
+                        <option value="annually">{t("Repeated annual bill")}</option>
+                        <option value="custom_period">{t("Bill for a specified period")}</option>
                       </select>
                     </label>
                     <label>
-                      Due date
+                      {t("Due date")}
                       <DateInput
                         required
                         value={manualBillForm.due_date}
@@ -1967,7 +1972,7 @@ function App() {
                     {manualBillForm.recurrence !== "one_time" && (
                       <div className="two-columns">
                         <label>
-                          Period start
+                          {t("Period start")}
                           <DateInput
                             required
                             value={manualBillForm.period_start}
@@ -1975,7 +1980,7 @@ function App() {
                           />
                         </label>
                         <label>
-                          Period end
+                          {t("Period end")}
                           <DateInput
                             required
                             value={manualBillForm.period_end}
@@ -1985,7 +1990,7 @@ function App() {
                       </div>
                     )}
                     <label>
-                      Notes
+                      {t("Notes")}
                       <textarea
                         value={manualBillForm.notes}
                         onChange={(event) => setManualBillForm({ ...manualBillForm, notes: event.target.value })}
@@ -1993,10 +1998,10 @@ function App() {
                     </label>
                     <div className="modal-actions">
                       <button disabled={loading} className="primary">
-                        Create Property Bill
+                        {t("Create Property Bill")}
                       </button>
                       <button type="button" className="secondary" onClick={closeBillModal}>
-                        Cancel
+                        {t("Cancel")}
                       </button>
                     </div>
                   </form>
@@ -2008,7 +2013,7 @@ function App() {
           {activeTab === "bills" && (
             <section className="card">
               <div className="card-header">
-                <h2>Rental & Payments</h2>
+                <h2>{t("Rental & Payments")}</h2>
                 <div className="header-actions">
                   <label className="inline-checkbox">
                     <input
@@ -2016,28 +2021,28 @@ function App() {
                       checked={showHistoricPaidBills}
                       onChange={(event) => setShowHistoricPaidBills(event.target.checked)}
                     />
-                    Show historic paid rental
+                    {t("Show historic paid rental")}
                   </label>
                 </div>
               </div>
-              <p className="help-text">Current-month rent is generated automatically for eligible leases.</p>
+              <p className="help-text">{t("Current-month rent is generated automatically for eligible leases.")}</p>
               {!showHistoricPaidBills && hiddenPaidBillCount > 0 && (
-                <p className="help-text">{hiddenPaidBillCount} paid rental record(s) hidden. Enable "Show historic paid rental" to view them.</p>
+                <p className="help-text">{t("{{count}} paid rental record(s) hidden. Enable \"Show historic paid rental\" to view them.", { count: hiddenPaidBillCount })}</p>
               )}
               {selectedPaymentTenant && (
                 <section className="payment-history">
                   <div className="card-header">
                     <div>
-                      <h3>{selectedPaymentTenant.full_name} payment history</h3>
-                      <p className="help-text">All recorded payments for this tenant.</p>
+                      <h3>{t("{{name}} payment history", { name: selectedPaymentTenant.full_name })}</h3>
+                      <p className="help-text">{t("All recorded payments for this tenant.")}</p>
                     </div>
                     <button className="secondary" onClick={() => setSelectedPaymentTenantId(null)}>
-                      Close
+                      {t("Close")}
                     </button>
                   </div>
                   <DataTable
                     key={selectedPaymentTenantId}
-                    label={`${selectedPaymentTenant.full_name} payment history`}
+                    label={t("{{name}} payment history", { name: selectedPaymentTenant.full_name })}
                     empty="No payment history for this tenant yet."
                     headers={["Payment ID", "Paid At", "Amount Paid", "Billing Month / Bill ID", "Note"]}
                     className="compact-table"
@@ -2052,7 +2057,7 @@ function App() {
                           <td>
                             {paymentBill
                               ? `${paymentBill.bill_year}-${String(paymentBill.bill_month).padStart(2, "0")}`
-                              : `Rental #${payment.bill_id}`}
+                              : t("Rental #{{id}}", { id: payment.bill_id })}
                           </td>
                           <td>{payment.note || "-"}</td>
                         </tr>
@@ -2078,7 +2083,7 @@ function App() {
                       </td>
                       <td>
                         <button className="link-button" onClick={() => setSelectedPaymentTenantId(bill.tenant_id)}>
-                          {bill.tenant_name || tenantNameById.get(bill.tenant_id) || `Tenant #${bill.tenant_id}`}
+                          {bill.tenant_name || tenantNameById.get(bill.tenant_id) || t("Tenant #{{id}}", { id: bill.tenant_id })}
                         </button>
                       </td>
                       <td>
@@ -2088,33 +2093,33 @@ function App() {
                       <td className="numeric">${bill.amount_paid}</td>
                       <td className="numeric">${bill.balance}</td>
                       <td>
-                        <span className={`status ${bill.status}`}>{bill.status}</span>
+                        <span className={`status ${bill.status}`}>{t(bill.status)}</span>
                       </td>
                       <td>
                         <div className="rental-row-actions">
                           <button
                             disabled={loading || Number(bill.balance) <= 0}
-                            aria-label={`Record payment for bill #${bill.id}`}
+                            aria-label={t("Record payment for bill #{{id}}", { id: bill.id })}
                             onClick={() => {
                               setError("");
                               setSelectedPaymentBillId(bill.id);
                             }}
                           >
-                            Pay
+                            {t("Pay")}
                           </button>
                           <button
                             className="danger"
                             disabled={loading}
-                            aria-label={`Delete bill #${bill.id}`}
+                            aria-label={t("Delete bill #{{id}}", { id: bill.id })}
                             onClick={() =>
-                              confirmDelete(`${isTenantCharge ? "tenant charge" : "rental record"} #${bill.id}`) &&
+                              confirmDelete(t(isTenantCharge ? "tenant charge #{{id}}" : "rental record #{{id}}", { id: bill.id })) &&
                               withStatus(
                                 () => api.deleteBill(bill.id).then(loadLandlordData),
                                 isTenantCharge ? "Tenant charge deleted." : "Rental record deleted.",
                               )
                             }
                           >
-                            Delete
+                            {t("Delete")}
                           </button>
                         </div>
                       </td>
@@ -2145,7 +2150,7 @@ function Status({ error, message }: { error: string; message: string }) {
   if (!error && !message) {
     return null;
   }
-  return <div className={error ? "alert error" : "alert success"}>{error || message}</div>;
+  return <div role={error ? "alert" : "status"} className={error ? "alert error" : "alert success"}>{t(error || message)}</div>;
 }
 
 export default App;

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { api } from "./api";
 import type { User } from "./api";
+import { t } from "./i18n";
 
 export function EncryptionSettings({ user, loading, onBusyChange, onChanged }: {
   user: User;
@@ -26,7 +27,7 @@ export function EncryptionSettings({ user, loading, onBusyChange, onChanged }: {
     const warning = enabled
       ? "Encrypt your existing and future sensitive rental data? This requires a server encryption key. Password resets still retain access. Old backups are not encrypted retroactively."
       : "Turn off encryption? Your existing and future rental data will be stored unencrypted and can be read directly from the database.";
-    if (!window.confirm(warning)) return;
+    if (!window.confirm(t(warning))) return;
     busy.current = true;
     onBusyChange(true);
     try {
@@ -45,19 +46,19 @@ export function EncryptionSettings({ user, loading, onBusyChange, onChanged }: {
 
   return (
     <section className="form-section" aria-labelledby="encryption-heading" aria-busy={loading}>
-      <h3 id="encryption-heading">Data Encryption: {user.encryption_enabled ? "On" : "Off"}</h3>
-      <p className="muted">Optional and off by default. Encrypt sensitive rental data before database storage. Account details and dates remain readable; admin password resets still retain access.</p>
+      <h3 id="encryption-heading">{t("Data Encryption: {{status}}", { status: t(user.encryption_enabled ? "On" : "Off") })}</h3>
+      <p className="muted">{t("Optional and off by default. Encrypt sensitive rental data before database storage. Account details and dates remain readable; admin password resets still retain access.")}</p>
       <label className="inline-checkbox">
         <input type="checkbox" checked={enabled} disabled={loading} onChange={(event) => {
           setEnabled(event.target.checked);
           setError("");
           setMessage("");
         }} />
-        Encrypt my rental data
+        {t("Encrypt my rental data")}
       </label>
       {changed && (
         <>
-          <label>Current password to change encryption
+          <label>{t("Current password to change encryption")}
             <input type="password" autoComplete="current-password" maxLength={72} value={password} disabled={loading}
               onChange={(event) => setPassword(event.target.value)}
               onKeyDown={(event) => {
@@ -68,12 +69,12 @@ export function EncryptionSettings({ user, loading, onBusyChange, onChanged }: {
               }} />
           </label>
           <button type="button" className="secondary" disabled={loading} onClick={() => void apply()}>
-            {busy.current ? "Converting records..." : "Apply Encryption Setting"}
+            {t(busy.current ? "Converting records..." : "Apply Encryption Setting")}
           </button>
         </>
       )}
-      {error && <p className="alert error" role="alert">{error}</p>}
-      {message && <p className="alert success" role="status">{message}</p>}
+      {error && <p className="alert error" role="alert">{t(error)}</p>}
+      {message && <p className="alert success" role="status">{t(message)}</p>}
     </section>
   );
 }

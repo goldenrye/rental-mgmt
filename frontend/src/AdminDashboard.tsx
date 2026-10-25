@@ -4,6 +4,8 @@ import { api, storeToken } from "./api";
 import type { LandlordAccount, User } from "./api";
 import { LandlordInvites } from "./LandlordInvites";
 import { DataTable } from "./PaginatedEntries";
+import { t } from "./i18n";
+import { LanguageSelector } from "./LanguageSelector";
 
 const dateTime = (value: string | null) => value ? new Date(value).toLocaleString() : "-";
 
@@ -46,10 +48,10 @@ function AccountActionDialog({ action, onClose, onSaved }: {
     try {
       if (kind === "password") {
         await api.resetLandlordPassword(account.user_id, password);
-        onSaved(`Password reset for ${account.email}. Existing sessions and MCP API keys were revoked.`);
+        onSaved(t("Password reset for {{email}}. Existing sessions and MCP API keys were revoked.", { email: account.email }));
       } else {
         await api.setLandlordActive(account.user_id, !account.is_active);
-        onSaved(`${account.email} ${account.is_active ? "deactivated" : "activated"}.`);
+        onSaved(t("{{email}} {{state}}.", { email: account.email, state: t(account.is_active ? "deactivated" : "activated") }));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update landlord.");
@@ -65,25 +67,25 @@ function AccountActionDialog({ action, onClose, onSaved }: {
       if (!busy.current) onClose();
     }}>
       <form className="form" onSubmit={submit} aria-busy={saving}>
-        <h2 id="admin-action-title">{label}</h2>
+        <h2 id="admin-action-title">{t(label)}</h2>
         <p>{account.full_name} ({account.email})</p>
         <p className="muted">
-          {kind === "password"
+          {t(kind === "password"
             ? "This replaces the password and revokes all API and MCP sessions, including MCP API keys. Share the new password securely with the landlord."
             : account.is_active
               ? "This blocks login and revokes all API and MCP sessions, including MCP API keys. Properties, tenants, and bills are preserved."
-              : "This restores login access. Previously revoked sessions and MCP API keys remain invalid."}
+              : "This restores login access. Previously revoked sessions and MCP API keys remain invalid.")}
         </p>
         {kind === "password" && (
           <>
-            <label>New password<input autoFocus required type="password" autoComplete="new-password" minLength={8} maxLength={72} value={password} disabled={saving} onChange={(event) => setPassword(event.target.value)} /></label>
-            <label>Confirm new password<input required type="password" autoComplete="new-password" minLength={8} maxLength={72} value={confirmation} disabled={saving} onChange={(event) => setConfirmation(event.target.value)} /></label>
+            <label>{t("New password")}<input autoFocus required type="password" autoComplete="new-password" minLength={8} maxLength={72} value={password} disabled={saving} onChange={(event) => setPassword(event.target.value)} /></label>
+            <label>{t("Confirm new password")}<input required type="password" autoComplete="new-password" minLength={8} maxLength={72} value={confirmation} disabled={saving} onChange={(event) => setConfirmation(event.target.value)} /></label>
           </>
         )}
-        {error && <p role="alert" className="alert error">{error}</p>}
+        {error && <p role="alert" className="alert error">{t(error)}</p>}
         <div className="modal-actions">
-          <button type="button" className="secondary" disabled={saving} onClick={onClose}>Cancel</button>
-          <button className={kind === "password" || account.is_active ? "danger" : "primary"} disabled={saving}>{saving ? "Saving..." : label}</button>
+          <button type="button" className="secondary" disabled={saving} onClick={onClose}>{t("Cancel")}</button>
+          <button className={kind === "password" || account.is_active ? "danger" : "primary"} disabled={saving}>{t(saving ? "Saving..." : label)}</button>
         </div>
       </form>
     </dialog>
@@ -160,25 +162,26 @@ export function AdminDashboard({ user, onLogout, onUserChange }: {
     <main className="app-shell">
       <header className="topbar">
         <div className="header-greeting">
-          <p className="eyebrow">Rental Management / Super Admin</p>
-          <h1>Landlord Management</h1>
+          <p className="eyebrow">{t("Rental Management / Super Admin")}</p>
+          <h1>{t("Landlord Management")}</h1>
         </div>
         <div className="header-actions">
-          {!user.password_change_required && <button className="secondary" disabled={loading} onClick={() => setShowPassword((value) => !value)}>Change Admin Password</button>}
-          <button className="secondary" disabled={loading} onClick={() => void onLogout()}>Logout</button>
+          <LanguageSelector />
+          {!user.password_change_required && <button className="secondary" disabled={loading} onClick={() => setShowPassword((value) => !value)}>{t("Change Admin Password")}</button>}
+          <button className="secondary" disabled={loading} onClick={() => void onLogout()}>{t("Logout")}</button>
         </div>
       </header>
-      {error && <p role="alert" className="alert error">{error}</p>}
-      {message && <p role="status" className="alert success">{message}</p>}
+      {error && <p role="alert" className="alert error">{t(error)}</p>}
+      {message && <p role="status" className="alert success">{t(message)}</p>}
       {(showPassword || user.password_change_required) && (
         <section className="card admin-password-card">
           <form className="form" onSubmit={changePassword}>
-            <h2>{user.password_change_required ? "Secure Your Admin Account" : "Change Admin Password"}</h2>
-            <p className="muted">Choose a new password before managing accounts. Use at least 8 characters. Changing it revokes existing admin sessions.</p>
-            <label>Current password<input required type="password" autoComplete="current-password" value={currentPassword} disabled={loading} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
-            <label>New password<input required minLength={8} maxLength={72} type="password" autoComplete="new-password" value={newPassword} disabled={loading} onChange={(event) => setNewPassword(event.target.value)} /></label>
-            <label>Confirm new password<input required minLength={8} maxLength={72} type="password" autoComplete="new-password" value={confirmation} disabled={loading} onChange={(event) => setConfirmation(event.target.value)} /></label>
-            <button className="primary" disabled={loading}>{loading ? "Saving..." : "Save Admin Password"}</button>
+            <h2>{t(user.password_change_required ? "Secure Your Admin Account" : "Change Admin Password")}</h2>
+            <p className="muted">{t("Choose a new password before managing accounts. Use at least 8 characters. Changing it revokes existing admin sessions.")}</p>
+            <label>{t("Current password")}<input required type="password" autoComplete="current-password" value={currentPassword} disabled={loading} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+            <label>{t("New password")}<input required minLength={8} maxLength={72} type="password" autoComplete="new-password" value={newPassword} disabled={loading} onChange={(event) => setNewPassword(event.target.value)} /></label>
+            <label>{t("Confirm new password")}<input required minLength={8} maxLength={72} type="password" autoComplete="new-password" value={confirmation} disabled={loading} onChange={(event) => setConfirmation(event.target.value)} /></label>
+            <button className="primary" disabled={loading}>{t(loading ? "Saving..." : "Save Admin Password")}</button>
           </form>
         </section>
       )}
@@ -186,27 +189,27 @@ export function AdminDashboard({ user, onLogout, onUserChange }: {
       {!user.password_change_required && (
         <section className="card">
           <div className="card-header">
-            <h2>Landlords ({visible.length} of {accounts.length})</h2>
-            <button className="secondary" disabled={loading} onClick={() => void refresh()}>{loading ? "Loading..." : "Refresh"}</button>
+            <h2>{t("Landlords ({{visible}} of {{total}})", { visible: visible.length, total: accounts.length })}</h2>
+            <button className="secondary" disabled={loading} onClick={() => void refresh()}>{t(loading ? "Loading..." : "Refresh")}</button>
           </div>
           <div className="admin-filters">
-            <label>Search<input type="search" placeholder="Name or email" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-            <label>Account status<select value={status} onChange={(event) => setStatus(event.target.value)}>
-              <option value="all">All accounts</option><option value="active">Active</option><option value="inactive">Deactivated</option>
+            <label>{t("Search")}<input type="search" placeholder={t("Name or email")} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+            <label>{t("Account status")}<select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="all">{t("All accounts")}</option><option value="active">{t("Active")}</option><option value="inactive">{t("Deactivated")}</option>
             </select></label>
           </div>
-          <p className="muted admin-session-note">Signed in means an unexpired session exists, not live browser presence. Refresh for the latest status. Login history starts when this feature is enabled.</p>
+          <p className="muted admin-session-note">{t("Signed in means an unexpired session exists, not live browser presence. Refresh for the latest status. Login history starts when this feature is enabled.")}</p>
           <DataTable key={`${search}|${status}`} label="Landlord accounts" empty={loading ? "Loading landlords..." : "No matching landlords."}
             headers={["ID", "Name", "Email", "Account Status", "Login Status", "Sessions", "Last Login", "Last Activity", "Actions"]} className="compact-table">
             {visible.map((account) => (
               <tr key={account.user_id}>
                 <td>#{account.user_id}</td><td>{account.full_name}</td><td>{account.email}</td>
-                <td><span className={`status ${account.is_active ? "paid" : "unpaid"}`}>{account.is_active ? "Active" : account.login_status === "never_logged_in" ? "Pending approval" : "Deactivated"}</span></td>
-                <td>{account.login_status === "signed_in" ? "Signed in" : account.login_status === "signed_out" ? "Signed out" : "No recorded login"}</td>
+                <td><span className={`status ${account.is_active ? "paid" : "unpaid"}`}>{t(account.is_active ? "Active" : account.login_status === "never_logged_in" ? "Pending approval" : "Deactivated")}</span></td>
+                <td>{t(account.login_status === "signed_in" ? "Signed in" : account.login_status === "signed_out" ? "Signed out" : "No recorded login")}</td>
                 <td>{account.active_sessions}</td><td>{dateTime(account.last_login_at)}</td><td>{dateTime(account.last_seen_at)}</td>
                 <td><div className="compact-row-actions">
-                  <button className={account.is_active ? "danger" : "secondary"} disabled={loading} aria-haspopup="dialog" aria-label={`${account.is_active ? "Deactivate" : "Activate"} ${account.email}`} onClick={() => setAction({ account, kind: "status" })}>{account.is_active ? "Deactivate" : "Activate"}</button>
-                  <button disabled={loading} aria-haspopup="dialog" aria-label={`Reset password for ${account.email}`} onClick={() => setAction({ account, kind: "password" })}>Reset Password</button>
+                  <button className={account.is_active ? "danger" : "secondary"} disabled={loading} aria-haspopup="dialog" aria-label={t("{{action}} {{email}}", { action: t(account.is_active ? "Deactivate" : "Activate"), email: account.email })} onClick={() => setAction({ account, kind: "status" })}>{t(account.is_active ? "Deactivate" : "Activate")}</button>
+                  <button disabled={loading} aria-haspopup="dialog" aria-label={t("Reset password for {{email}}", { email: account.email })} onClick={() => setAction({ account, kind: "password" })}>{t("Reset Password")}</button>
                 </div></td>
               </tr>
             ))}

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Bill } from "./api";
+import { t } from "./i18n";
 
 type PaymentDraft = { amount: string; paid_at: string; note: string };
 
@@ -51,15 +52,15 @@ export function PaymentDialog({ bill, payment, saving, error, onChange, onClose,
           }
         }}
       >
-        <h2 id="payment-dialog-title">Record Payment</h2>
+        <h2 id="payment-dialog-title">{t("Record Payment")}</h2>
         <p className="muted">
-          Bill #{bill.id}: {bill.title} | {bill.tenant_name}
+          {t("Bill #{{id}}: {{title}} | {{tenant}}", { id: bill.id, title: bill.title, tenant: bill.tenant_name })}
           <br />
-          Outstanding balance: ${bill.balance}
+          {t("Outstanding balance: ${{balance}}", { balance: bill.balance })}
         </p>
-        {error && <p className="alert error" role="alert">{error}</p>}
+        {error && <p className="alert error" role="alert">{t(error)}</p>}
         <label>
-          Payment amount ($)
+          {t("Payment amount ($)")}
           <input
             autoFocus
             required
@@ -73,7 +74,7 @@ export function PaymentDialog({ bill, payment, saving, error, onChange, onClose,
           />
         </label>
         <label>
-          Payment date and time (optional, defaults to now)
+          {t("Payment date and time (optional, defaults to now)")}
           <input
             type="datetime-local"
             value={payment.paid_at}
@@ -82,7 +83,7 @@ export function PaymentDialog({ bill, payment, saving, error, onChange, onClose,
           />
         </label>
         <label>
-          Note (optional)
+          {t("Note (optional)")}
           <input
             value={payment.note}
             disabled={saving}
@@ -90,9 +91,9 @@ export function PaymentDialog({ bill, payment, saving, error, onChange, onClose,
           />
         </label>
         <div className="modal-actions">
-          <button type="button" className="secondary" disabled={saving} onClick={onClose}>Cancel</button>
+          <button type="button" className="secondary" disabled={saving} onClick={onClose}>{t("Cancel")}</button>
           <button type="submit" className="primary" disabled={saving || !payment.amount}>
-            {saving ? "Recording..." : "Record Payment"}
+            {t(saving ? "Recording..." : "Record Payment")}
           </button>
         </div>
       </form>

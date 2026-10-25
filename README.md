@@ -6,6 +6,7 @@ Compose stack behind nginx with HTTPS (Let's Encrypt), Postgres, and automatic
 database backups.
 
 - [Features](#features)
+- [Languages](#languages)
 - [Architecture](#architecture)
 - [Local development](#local-development)
 - [iPhone client](#iphone-client)
@@ -38,6 +39,7 @@ database backups.
 - Payments recorded against bills; each payment recalculates the bill's balance and
   status (open, partial or paid)
 - Property bill filters, lease details and profile and password settings
+- English and Simplified Chinese interface, with a remembered language choice
 - Self-service password reset by emailed link, when the server has SMTP configured
 - Optional Google Calendar export of newly generated rent bills, off by default per landlord
 - Optional browser push reminders before leases end and bills are due, turned on per device
@@ -56,6 +58,33 @@ database backups.
 **Tenants**: tenant accounts can only be created when `OPEN_REGISTRATION=true`
 (local development). Tenant bills are available from the API at `GET /tenant/bills`;
 the web app's tenant portal is only a placeholder.
+
+## Languages
+
+The web app and packaged iPhone client support **English** and **Simplified Chinese**.
+Choose a language on the sign-in page or in the profile menu. Administrators have
+a selector in their dashboard header.
+
+- On first use, the first supported browser language is selected; unsupported
+  languages fall back to English. Chinese browser variants currently use Simplified Chinese.
+- A manual choice is saved on that browser/device and survives reload and logout.
+  It is a UI preference, not an account setting synchronized across devices.
+- Switching languages does not submit forms or clear drafts. Names, addresses,
+  notes, bill titles, API values, currencies, and billing/date calculations remain unchanged.
+- Navigation, forms, mobile table labels, confirmations, settings, invitations,
+  and common validation/authentication errors are translated.
+- Emails, Google Calendar events/OAuth completion pages, push notification payloads,
+  the standalone Privacy & Terms document, and previously generated bill titles
+  are not translated by this UI feature. Unrecognized server messages fall back
+  to their original text.
+
+Translations live in `frontend/src/translations.ts`. English interface strings are
+the keys and fallback text; `t()` uses i18next interpolation for dynamic values.
+Translate only UI-owned text, never user-entered content or API enum values.
+Keep interpolation variable names identical in both languages. `npm test` checks
+catalog coverage for literal translation calls/table headings, interpolation
+variables, language detection, persistence, and mobile action-column semantics.
+Browser tests cover Chinese signup, validation, payments, and native session isolation.
 
 ## Architecture
 

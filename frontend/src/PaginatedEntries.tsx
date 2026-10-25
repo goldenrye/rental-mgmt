@@ -2,6 +2,7 @@ import { Children, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { paginateEntries } from "./pagination";
 import { labelTableRows } from "./mobileTable";
+import { t } from "./i18n";
 
 function PaginatedEntries({ children, label, render }: {
   children: ReactNode;
@@ -19,24 +20,24 @@ function PaginatedEntries({ children, label, render }: {
     <>
       {render(result.entries)}
       {result.pageCount > 1 && (
-        <nav className="pagination" aria-label={`${label} pagination`} onClick={(event) => event.stopPropagation()}>
+        <nav className="pagination" aria-label={t("{{label}} pagination", { label: t(label) })} onClick={(event) => event.stopPropagation()}>
           <span className="pagination-summary" role="status">
-            {result.first}-{result.last} of {result.total} | Page {result.page} of {result.pageCount}
+            {t("{{first}}-{{last}} of {{total}} | Page {{page}} of {{pages}}", { first: result.first, last: result.last, total: result.total, page: result.page, pages: result.pageCount })}
           </span>
           <div className="pagination-buttons">
-            <button type="button" disabled={result.page === 1} onClick={() => setPage(result.page - 1)} aria-label={`Previous page of ${label}`}>Previous</button>
+            <button type="button" disabled={result.page === 1} onClick={() => setPage(result.page - 1)} aria-label={t("Previous page of {{label}}", { label: t(label) })}>{t("Previous")}</button>
             {Array.from({ length: result.pageCount }, (_, index) => index + 1).map((page) => (
               <button
                 key={page}
                 type="button"
-                aria-label={`${label} page ${page}`}
+                aria-label={t("{{label}} page {{page}}", { label: t(label), page })}
                 aria-current={page === result.page ? "page" : undefined}
                 onClick={() => setPage(page)}
               >
                 {page}
               </button>
             ))}
-            <button type="button" disabled={result.page === result.pageCount} onClick={() => setPage(result.page + 1)} aria-label={`Next page of ${label}`}>Next</button>
+            <button type="button" disabled={result.page === result.pageCount} onClick={() => setPage(result.page + 1)} aria-label={t("Next page of {{label}}", { label: t(label) })}>{t("Next")}</button>
           </div>
         </nav>
       )}
@@ -59,17 +60,18 @@ export function DataTable({ children, empty, headers, className, label = "Entrie
   className?: string;
   label?: string;
 }) {
+  const translatedHeaders = headers?.map((header) => t(header));
   return (
     <PaginatedEntries
       label={label}
       render={(entries) => entries.length ? (
         <div className="table-wrap">
-          <table className={`${className ?? ""}${headers ? " mobile-table" : ""}`} aria-label={label} role="table">
-            {headers && <thead role="rowgroup"><tr role="row">{headers.map((header) => <th role="columnheader" scope="col" key={header}>{header}</th>)}</tr></thead>}
-            <tbody role="rowgroup">{headers ? labelTableRows(entries, headers) : entries}</tbody>
+          <table className={`${className ?? ""}${headers ? " mobile-table" : ""}`} aria-label={t(label)} role="table">
+            {translatedHeaders && <thead role="rowgroup"><tr role="row">{translatedHeaders.map((header) => <th role="columnheader" scope="col" key={header}>{header}</th>)}</tr></thead>}
+            <tbody role="rowgroup">{translatedHeaders ? labelTableRows(entries, translatedHeaders, headers) : entries}</tbody>
           </table>
         </div>
-      ) : <p className="muted">{empty}</p>}
+      ) : <p className="muted">{t(empty)}</p>}
     >
       {children}
     </PaginatedEntries>

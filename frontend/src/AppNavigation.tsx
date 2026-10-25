@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { t } from "./i18n";
 
 export type Tab = "properties" | "tenants" | "leases" | "bills" | "bill";
 const items: { tab: Tab; label: string; shortLabel: string; icon: ReactNode }[] = [
@@ -11,13 +12,13 @@ const items: { tab: Tab; label: string; shortLabel: string; icon: ReactNode }[] 
 
 export function AppNavigation({ activeTab, onChange }: { activeTab: Tab; onChange: (tab: Tab) => void }) {
   return (
-    <nav className="tabs app-navigation" aria-label="Main navigation">
+    <nav className="tabs app-navigation" aria-label={t("Main navigation")}>
       {items.map(({ tab, label, shortLabel, icon }) => (
         <button
           key={tab}
           type="button"
           className={activeTab === tab ? "active" : ""}
-          aria-label={label}
+          aria-label={t(label)}
           aria-current={activeTab === tab ? "page" : undefined}
           onClick={() => {
             onChange(tab);
@@ -27,8 +28,8 @@ export function AppNavigation({ activeTab, onChange }: { activeTab: Tab; onChang
           }}
         >
           <svg className="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>
-          <span className="desktop-nav-label">{label}</span>
-          <span className="mobile-nav-label" aria-hidden="true">{shortLabel}</span>
+          <span className="desktop-nav-label">{t(label)}</span>
+          <span className="mobile-nav-label" aria-hidden="true">{t(shortLabel)}</span>
         </button>
       ))}
     </nav>

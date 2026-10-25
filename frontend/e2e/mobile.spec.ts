@@ -1,6 +1,125 @@
 import { test, expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
+test("Chinese browser language is detected and manual choice persists without clearing drafts", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, "languages", { value: ["zh-CN", "en-US"] }));
+  await page.goto("/#invite=language-test-invitation");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(page).toHaveTitle("租赁管理");
+  await page.getByLabel("姓名", { exact: true }).fill("张三 Properties");
+  await page.getByLabel("语言", { exact: true }).selectOption("en");
+  await expect(page.getByLabel("Full name", { exact: true })).toHaveValue("张三 Properties");
+  await expect(page).toHaveURL(/#invite=language-test-invitation/);
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByLabel("Language", { exact: true })).toHaveValue("en");
+  await page.getByLabel("Language", { exact: true }).selectOption("zh-CN");
+  await expect(page.getByRole("button", { name: "创建账户", exact: true })).toBeVisible();
+  await noOverflow(page);
+});
+
+test("Chinese invitation signup translates validation and authentication errors", async ({ page }) => {
+  await mockAPI(page);
+  let registration: Record<string, unknown> | undefined;
+  await page.route("**/api/auth/register", (route) => {
+    registration = route.request().postDataJSON();
+    return route.fulfill({ json: { id: 1 } });
+  });
+  await page.goto("/#invite=chinese-test-invitation");
+  await page.getByLabel("Language", { exact: true }).selectOption("zh-CN");
+  await page.getByRole("button", { name: "创建账户", exact: true }).click();
+  expect(await page.getByLabel("姓名", { exact: true }).evaluate((element) => (element as HTMLInputElement).validationMessage)).toBe("请填写此字段。");
+  await page.getByLabel("姓名", { exact: true }).fill("李明");
+  await page.getByLabel("邮箱", { exact: true }).fill("chinese@example.test");
+  await page.getByLabel("密码", { exact: true }).fill("test-password");
+  await page.getByRole("button", { name: "创建账户", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "欢迎，Test Owner" })).toBeVisible();
+  expect(registration).toEqual({
+    email: "chinese@example.test", full_name: "李明", password: "test-password",
+    role: "landlord", invite_code: "chinese-test-invitation",
+  });
+  await page.getByRole("button", { name: "打开个人菜单" }).click();
+  await page.getByRole("button", { name: "退出登录", exact: true }).click();
+  await page.route("**/api/auth/login", (route) => route.fulfill({ status: 401, json: { detail: "Invalid email or password" } }));
+  page.on("dialog", async (dialog) => {
+    expect(dialog.message()).toBe("邮箱或密码不正确");
+    await dialog.accept();
+  });
+  await page.getByLabel("邮箱或管理员用户名").fill("wrong@example.test");
+  await page.getByLabel("密码", { exact: true }).fill("wrong-password");
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("邮箱或密码不正确");
+  await page.getByLabel("语言", { exact: true }).selectOption("en");
+  await expect(page.getByRole("alert")).toHaveText("Invalid email or password");
+});
+
+test("Chinese rental workflow preserves user data, financial payloads, and mobile alignment", async ({ page, isMobile }) => {
+  await login(page);
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByLabel("Language", { exact: true }).selectOption("zh-CN");
+  await page.getByRole("button", { name: "打开个人菜单" }).click();
+  const table = page.getByRole("table", { name: "房产", exact: true });
+  await expect(table).toBeVisible();
+  await expect(table.getByText("Property 1", { exact: true })).toBeVisible();
+  await expect(table.locator("tbody > tr").first().locator("td").last()).toHaveAttribute("data-full-width", "true");
+  await expect(table.locator("tbody > tr").first().locator("td").first()).toHaveAttribute("data-label", "房产");
+  await page.getByRole("button", { name: "房产 下一页", exact: true }).click();
+  await expect(table.getByText("Property 11", { exact: true })).toBeVisible();
+  let propertyPayload: unknown;
+  await page.route("**/api/properties", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    propertyPayload = route.request().postDataJSON();
+    return route.fulfill({ json: { id: 12, landlord_id: 1, ...(propertyPayload as object) } });
+  });
+  await page.getByRole("button", { name: "添加房产", exact: true }).click();
+  const property = page.getByRole("dialog", { name: "添加房产" });
+  await property.getByLabel("名称", { exact: true }).fill("Properties");
+  await property.getByLabel("地址", { exact: true }).fill("123 Main Street");
+  await property.getByLabel("描述", { exact: true }).fill("张三的房产");
+  await property.getByRole("button", { name: "添加房产", exact: true }).click();
+  await expect(property).not.toBeVisible();
+  expect(propertyPayload).toEqual({ name: "Properties", address: "123 Main Street", description: "张三的房产" });
+  await page.getByRole("button", { name: "租约", exact: true }).click();
+  await page.getByRole("button", { name: "编辑租约 #1", exact: true }).click();
+  const lease = page.getByRole("dialog", { name: "编辑租约" });
+  await expect(lease.getByLabel("月租金", { exact: true })).toHaveValue("1000.00");
+  await expect(lease.getByLabel("开始日期", { exact: true })).toHaveValue("2026-01-01");
+  await lease.getByLabel("开始日期", { exact: true }).fill("2026-02-30");
+  await lease.getByRole("button", { name: "保存租约" }).click();
+  expect(await lease.getByLabel("开始日期", { exact: true }).evaluate((element) => (element as HTMLInputElement).validationMessage)).toContain("有效日期");
+  await lease.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("button", { name: "房产账单", exact: true }).click();
+  const bills = page.getByRole("table", { name: "房产账单", exact: true });
+  await expect(bills.getByText("Water bill", { exact: true })).toBeVisible();
+  await expect(bills.locator(".status")).toHaveText("未付");
+  await page.getByRole("button", { name: "租金与收付款", exact: true }).click();
+  const rent = page.getByRole("table", { name: "租金记录", exact: true });
+  await expect(rent.getByText("Monthly rent", { exact: true })).toBeVisible();
+  await expect(rent.locator(".status")).toHaveText("未付");
+  let paymentPayload: unknown;
+  await page.route("**/api/bills/1/payments", (route) => {
+    paymentPayload = route.request().postDataJSON();
+    return route.fallback();
+  });
+  await page.getByRole("button", { name: "记录账单 #1 的付款", exact: true }).click();
+  const payment = page.getByRole("dialog", { name: "记录付款" });
+  await expect(payment).toContainText("待付余额：$1000.00");
+  await payment.getByLabel("付款金额（美元）", { exact: true }).fill("50.00");
+  await payment.getByLabel("备注（选填）", { exact: true }).fill("Cash 现金");
+  await payment.getByRole("button", { name: "记录付款", exact: true }).click();
+  await expect(payment).not.toBeVisible();
+  expect(paymentPayload).toEqual({ amount: "50.00", note: "Cash 现金" });
+  await expect(page.getByRole("status").filter({ hasText: "付款已记录" })).toBeVisible();
+  if (isMobile) {
+    const amount = rent.locator("tbody tr").first().locator('td[data-label="应付金额"]');
+    await expect(amount).toHaveCSS("text-align", "left");
+  }
+  await noOverflow(page);
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(page.getByRole("heading", { name: "欢迎，Test Owner" })).toBeVisible();
+});
+
 async function mockAPI(page: Page, admin = false) {
   const now = new Date();
   const dueDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-15`;

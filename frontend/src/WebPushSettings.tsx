@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { WebPushStatus } from "./api";
 import { isNative } from "./platform";
+import { t } from "./i18n";
 
 const supported = !isNative && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const iosBrowser = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.matchMedia("(display-mode: standalone)").matches;
@@ -134,22 +135,23 @@ export function WebPushSettings({ loading, onBusyChange }: {
 
   return (
     <section className="form-section" aria-labelledby="web-push-heading" aria-busy={loading}>
-      <h3 id="web-push-heading">Notifications: {status ? (thisDevice ? "On for this device" : "Off for this device") : "Loading..."}</h3>
+      <h3 id="web-push-heading">{t("Notifications: {{status}}", { status: t(status ? (thisDevice ? "On for this device" : "Off for this device") : "Loading...") })}</h3>
       <p className="muted">
-        Reminders {status ? `${status.lease_notice_days} days before a lease ends and ${status.bill_notice_days} days before unpaid bills are due` : "before leases end and bills are due"}.
-        Each reminder is sent once. They show only counts and dates, never tenant names, properties, or amounts.
+        {t("Reminders {{schedule}}. Each reminder is sent once. They show only counts and dates, never tenant names, properties, or amounts.", {
+          schedule: status ? t("{{lease}} days before a lease ends and {{bill}} days before unpaid bills are due", { lease: status.lease_notice_days, bill: status.bill_notice_days }) : t("before leases end and bills are due"),
+        })}
       </p>
-      {unavailable && <p className="help-text">{unavailable}</p>}
-      {status && status.devices > 0 && <p className="help-text">Devices receiving notifications: {status.devices}.</p>}
+      {unavailable && <p className="help-text">{t(unavailable)}</p>}
+      {status && status.devices > 0 && <p className="help-text">{t("Devices receiving notifications: {{count}}.", { count: status.devices })}</p>}
       <label className="inline-checkbox">
         <input type="checkbox" checked={status?.lease_expiry ?? true} disabled={loading || !status}
           onChange={(event) => setPreference({ lease_expiry: event.target.checked })} />
-        Lease ending soon
+        {t("Lease ending soon")}
       </label>
       <label className="inline-checkbox">
         <input type="checkbox" checked={status?.bill_due ?? true} disabled={loading || !status}
           onChange={(event) => setPreference({ bill_due: event.target.checked })} />
-        Bills due soon (property bills and unpaid tenant bills)
+        {t("Bills due soon (property bills and unpaid tenant bills)")}
       </label>
       <div className="actions">
         {thisDevice ? (
@@ -157,17 +159,17 @@ export function WebPushSettings({ loading, onBusyChange }: {
             <button type="button" className="secondary" disabled={loading} onClick={() => void run(async () => {
               setStatus(await api.testWebPush());
               setMessage("Test notification sent.");
-            })}>Send Test Notification</button>
-            <button type="button" className="danger" disabled={loading} onClick={disable}>Turn Off on This Device</button>
+            })}>{t("Send Test Notification")}</button>
+            <button type="button" className="danger" disabled={loading} onClick={disable}>{t("Turn Off on This Device")}</button>
           </>
         ) : (
           <button type="button" className="secondary" disabled={loading || !status || Boolean(unavailable)} onClick={enable}>
-            Turn On for This Device
+            {t("Turn On for This Device")}
           </button>
         )}
       </div>
-      {error && <p className="alert error" role="alert">{error}</p>}
-      {message && <p className="alert success" role="status">{message}</p>}
+      {error && <p className="alert error" role="alert">{t(error)}</p>}
+      {message && <p className="alert success" role="status">{t(message)}</p>}
     </section>
   );
 }

@@ -9,6 +9,7 @@ import {
 } from "./propertyBillFilters";
 import type { PropertyBillFilters } from "./propertyBillFilters";
 import { DateInput } from "./DateInput";
+import { t } from "./i18n";
 
 type Props = {
   filters: PropertyBillFilters;
@@ -60,69 +61,68 @@ export function PropertyBillFilterDialog({ filters, properties, onApply, onClose
           if (!error) onApply(draft);
         }}
       >
-        <h2 id="bill-filter-title">Filter Property Bills</h2>
+        <h2 id="bill-filter-title">{t("Filter Property Bills")}</h2>
         <p className="muted" id="bill-filter-help">
-          All filters are combined. Start and end dates filter the due-date range, including both dates.
-          Leave fields blank to include all values. Changes take effect after Apply Filters.
+          {t("All filters are combined. Start and end dates filter the due-date range, including both dates. Leave fields blank to include all values. Changes take effect after Apply Filters.")}
         </p>
         <div className="two-columns">
           <label>
-            Start date (due from)
+            {t("Start date (due from)")}
             <DateInput autoFocus max="9999-12-31" value={draft.start} onChange={(event) => update("start", event.target.value)} />
           </label>
           <label>
-            End date (due through)
+            {t("End date (due through)")}
             <DateInput max="9999-12-31" value={draft.end} onChange={(event) => update("end", event.target.value)} />
           </label>
           <label>
-            Exact due date
+            {t("Exact due date")}
             <DateInput max="9999-12-31" value={draft.due_date} onChange={(event) => update("due_date", event.target.value)} />
           </label>
           <label>
-            Bill category
+            {t("Bill category")}
             <select value={draft.bill_type} onChange={(event) => update("bill_type", event.target.value as PropertyBillFilters["bill_type"])}>
-              <option value="">All categories</option>
-              {Object.entries(billCategoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              <option value="">{t("All categories")}</option>
+              {Object.entries(billCategoryLabels).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
             </select>
           </label>
           <label>
-            Property
+            {t("Property")}
             <select value={draft.property_id} onChange={(event) => update("property_id", event.target.value)}>
-              <option value="">All properties</option>
+              <option value="">{t("All properties")}</option>
               {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
             </select>
           </label>
           <label>
-            Payment status
+            {t("Payment status")}
             <select value={draft.status} onChange={(event) => update("status", event.target.value as PropertyBillFilters["status"])}>
-              <option value="">All statuses</option>
-              <option value="unpaid">Unpaid</option>
-              <option value="paid">Paid</option>
+              <option value="">{t("All statuses")}</option>
+              <option value="unpaid">{t("Unpaid")}</option>
+              <option value="paid">{t("Paid")}</option>
             </select>
           </label>
           <label>
-            Repeat
+            {t("Repeat")}
             <select value={draft.recurrence} onChange={(event) => update("recurrence", event.target.value as PropertyBillFilters["recurrence"])}>
-              <option value="">All repeat options</option>
-              {Object.entries(billRecurrenceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              <option value="">{t("All repeat options")}</option>
+              {Object.entries(billRecurrenceLabels).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
             </select>
           </label>
           <label>
-            Tenant bills
+            {t("Tenant bills")}
             <select value={draft.tenant_bills} onChange={(event) => update("tenant_bills", event.target.value as PropertyBillFilters["tenant_bills"])}>
-              <option value="">All tenant bill states</option>
-              <option value="generated">Generated</option>
-              <option value="not_generated">Not generated</option>
+              <option value="">{t("All tenant bill states")}</option>
+              <option value="generated">{t("Generated")}</option>
+              <option value="not_generated">{t("Not generated")}</option>
             </select>
           </label>
         </div>
-        {error && <p className="error" role="alert">{error}</p>}
+        {error && <p className="error" role="alert">{t(error)}</p>}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={() => setDraft({ ...emptyPropertyBillFilters })}>
-            Reset Filters
+            {t("Reset Filters")}
           </button>
-          <button type="button" className="secondary" onClick={onClose}>Cancel</button>
-          <button type="submit" className="primary" disabled={Boolean(error)}>Apply Filters</button>
+          <button type="button" className="secondary" onClick={onClose}>{t("Cancel")}</button>
+          <button type="submit" className="primary" disabled={Boolean(error)}>{t("Apply Filters")}</button>
         </div>
       </form>
     </div>

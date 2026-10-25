@@ -1,6 +1,25 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+test("native language choice survives reload without changing secure session storage", async ({ page }) => {
+  const bridge = await nativeBridge(page);
+  await page.goto("/");
+  await signIn(page);
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByLabel("Language", { exact: true }).selectOption("zh-CN");
+  await expect(page.getByRole("heading", { name: "欢迎，Native User" })).toBeVisible();
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(page.getByRole("heading", { name: "欢迎，Native User" })).toBeVisible();
+  expect(bridge.getToken()).toBe("native-test-token");
+  expect(await page.evaluate(() => localStorage.getItem("rental_mgmt_token"))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem("rental_mgmt_language"))).toBe("zh-CN");
+  await page.getByRole("button", { name: "打开个人菜单" }).click();
+  await page.getByRole("button", { name: "退出登录", exact: true }).click();
+  await expect(page.getByRole("button", { name: "登录", exact: true })).toBeVisible();
+  expect(bridge.getToken()).toBeNull();
+});
+
 // Exercises the JS/native contract, not Apple's Keychain implementation.
 async function nativeBridge(page: Page, options: { locked?: boolean; admin?: boolean } = {}) {
   let token: string | null = null;

@@ -1,6 +1,14 @@
 import { useEffect, useRef } from "react";
 import type { InputHTMLAttributes } from "react";
 import { dateInputError } from "./dateValidation";
+import { t } from "./i18n";
+
+function localizedDateError(value: string, min: string, max: string): string {
+  const error = dateInputError(value, min, max);
+  if (error === `Enter a date on or after ${min}.`) return t("Enter a date on or after {{date}}.", { date: min });
+  if (error === `Enter a date on or before ${max}.`) return t("Enter a date on or before {{date}}.", { date: max });
+  return t(error);
+}
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "min" | "max"> & {
   value: string;
@@ -12,7 +20,7 @@ export function DateInput({
   value, onChange, min = "0001-01-01", max = "9999-12-31", disabled, readOnly, ...props
 }: Props) {
   const text = useRef<HTMLInputElement>(null);
-  const error = dateInputError(value, min, max);
+  const error = localizedDateError(value, min, max);
   useEffect(() => {
     text.current?.setCustomValidity(error);
   }, [error]);
@@ -24,7 +32,7 @@ export function DateInput({
         ref={text}
         type="text"
         placeholder="YYYY-MM-DD"
-        title="Enter YYYY-MM-DD or use the calendar"
+        title={t("Enter YYYY-MM-DD or use the calendar")}
         autoComplete="off"
         spellCheck={false}
         value={value}
@@ -32,7 +40,7 @@ export function DateInput({
         readOnly={readOnly}
         aria-invalid={error ? true : undefined}
         onChange={(event) => {
-          event.currentTarget.setCustomValidity(dateInputError(event.currentTarget.value, min, max));
+          event.currentTarget.setCustomValidity(localizedDateError(event.currentTarget.value, min, max));
           onChange?.(event);
         }}
       />
@@ -43,8 +51,8 @@ export function DateInput({
         </svg>
         <input
           type="date"
-          aria-label="Choose date with calendar"
-          title="Choose date with calendar"
+          aria-label={t("Choose date with calendar")}
+          title={t("Choose date with calendar")}
           min={min}
           max={max}
           value={error ? "" : value}
@@ -54,7 +62,7 @@ export function DateInput({
             try { event.currentTarget.showPicker?.(); } catch { /* Native interaction remains available. */ }
           }}
           onChange={(event) => {
-            text.current?.setCustomValidity(dateInputError(event.currentTarget.value, min, max));
+            text.current?.setCustomValidity(localizedDateError(event.currentTarget.value, min, max));
             onChange?.(event);
           }}
         />

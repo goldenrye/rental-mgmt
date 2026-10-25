@@ -1084,6 +1084,21 @@ td:first-child {
   color: #17693a;
 }
 
+.language-selector {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.language-selector select {
+  width: auto;
+  min-height: 44px;
+  max-width: 100%;
+}
+
 .two-columns {
   display: grid;
   gap: 12px;
