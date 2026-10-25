@@ -77,6 +77,56 @@ async function actionStyle(button: Locator) {
   });
 }
 
+test("compact mobile spacing preserves readable fields and touch targets", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "Mobile density checks");
+  await login(page);
+  const card = page.locator(".property-unit-page > section.card");
+  await expect(card).toHaveCSS("padding", "12px");
+  await expect(card.locator(".card-header")).toHaveCSS("flex-direction", "row");
+  const table = page.getByRole("table", { name: "Properties", exact: true });
+  await expect(table.locator("tbody > tr").first()).toHaveCSS("padding", "8px 10px");
+  await expect(table.locator("tbody > tr > td").first()).toHaveCSS("padding", "4px 0px");
+  await expect(page.locator(".app-navigation button").first()).toHaveCSS("min-height", "48px");
+  await noOverflow(page);
+
+  await page.getByRole("button", { name: "Add Property", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.locator(".form")).toHaveCSS("gap", "10px");
+  await expect(dialog.getByLabel("Name", { exact: true })).toHaveCSS("font-size", "16px");
+  await expect(dialog.getByLabel("Name", { exact: true })).toHaveCSS("min-height", "44px");
+  await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toHaveCSS("min-height", "44px");
+  await noOverflow(page);
+});
+
+test("mobile stylesheet rules have no effect above the desktop breakpoint", async ({ page, isMobile }) => {
+  test.skip(isMobile, "Desktop breakpoint isolation");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await login(page);
+  for (const width of [701, 980, 1000, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const unchanged = await page.evaluate(() => {
+      const rules = Array.from(document.styleSheets).flatMap((sheet) =>
+        Array.from(sheet.cssRules).filter((rule): rule is CSSMediaRule =>
+          rule instanceof CSSMediaRule && rule.conditionText.includes("max-width: 700px")),
+      );
+      const elements = Array.from(document.querySelectorAll("*"));
+      const snapshot = () => elements.map((element) => {
+        const style = getComputedStyle(element);
+        return Array.from(style).map((property) => style.getPropertyValue(property));
+      });
+      const before = snapshot();
+      const conditions = rules.map((rule) => rule.media.mediaText);
+      try {
+        rules.forEach((rule) => { rule.media.mediaText = "not all"; });
+        return JSON.stringify(snapshot()) === JSON.stringify(before);
+      } finally {
+        rules.forEach((rule, index) => { rule.media.mediaText = conditions[index]; });
+      }
+    });
+    expect(unchanged, `Mobile rules must not change desktop styles at ${width}px`).toBe(true);
+  }
+});
+
 test("action buttons share styles across pages and retain focus and touch targets", async ({ page, isMobile }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await login(page);

@@ -64,7 +64,7 @@
   .auth-shell,
   .app-shell {
     min-height: 100dvh;
-    padding: calc(16px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    padding: calc(10px + env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
   }
 
   .auth-shell {
@@ -73,8 +73,8 @@
 
   .auth-card,
   .card {
-    padding: 18px 14px;
-    border-radius: 16px;
+    padding: 12px;
+    border-radius: 12px;
     box-shadow: 0 8px 24px rgba(31, 44, 71, 0.06);
     min-width: 0;
   }
@@ -85,12 +85,74 @@
   }
 
   .has-bottom-nav {
-    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
   }
 
   .topbar {
     align-items: center;
     gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .card-header {
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .card h2 {
+    font-size: 1.05rem;
+  }
+
+  .grid,
+  .property-unit-page {
+    gap: 12px;
+  }
+
+  .form,
+  .form-section,
+  .profile-panel,
+  .detail-grid {
+    gap: 10px;
+  }
+
+  .form label {
+    gap: 4px;
+  }
+
+  .form p {
+    margin: 0;
+  }
+
+  .auth-card > .muted,
+  .card > .help-text,
+  .admin-session-note {
+    margin: 8px 0;
+  }
+
+  .auth-card .toggle {
+    margin: 12px 0;
+  }
+
+  .invitation-entry {
+    margin-top: 12px;
+    padding-top: 8px;
+  }
+
+  .detail-grid div {
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .alert {
+    margin: 10px 0;
+    padding: 10px;
+  }
+
+  .invite-card,
+  .admin-password-card {
+    margin-bottom: 12px;
   }
 
   .topbar h1 {
@@ -152,10 +214,10 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 2px;
     min-width: 0;
-    min-height: 52px;
-    padding: 6px 2px;
+    min-height: 48px;
+    padding: 4px 2px;
     font-size: 0.67rem;
     line-height: 1.2;
   }
@@ -180,6 +242,7 @@
   }
 
   .table-wrap {
+    margin-top: 10px;
     overflow: visible;
   }
 
@@ -205,8 +268,8 @@
     background: #fff;
     border: 1px solid #dbe3f0;
     border-radius: 12px;
-    margin-bottom: 12px;
-    padding: 10px 12px;
+    margin-bottom: 8px;
+    padding: 8px 10px;
   }
 
   .mobile-table > tbody > tr[hidden] {
@@ -217,9 +280,9 @@
     display: grid;
     grid-template-columns: minmax(88px, 0.8fr) minmax(0, 1.2fr);
     align-items: baseline;
-    gap: 6px 12px;
+    gap: 4px 8px;
     border: 0;
-    padding: 7px 0;
+    padding: 4px 0;
     max-width: none;
     overflow: visible;
     text-overflow: clip;
@@ -246,8 +309,8 @@
     flex-wrap: wrap;
     align-items: center;
     border-top: 1px solid #eef2f7;
-    margin-top: 5px;
-    padding-top: 10px;
+    margin-top: 4px;
+    padding-top: 8px;
   }
 
   .mobile-table > tbody > tr > td[data-full-width="true"]::before {
@@ -256,7 +319,7 @@
 
   .mobile-table > tbody > tr.property-units-row {
     background: #f4f7fc;
-    margin-top: -16px;
+    margin-top: -12px;
     padding: 6px;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
@@ -286,12 +349,14 @@
   .bill-filter-summary {
     flex-basis: 100%;
     white-space: normal;
-    line-height: 1.6;
+    line-height: 1.4;
   }
 
   .pagination {
     align-items: flex-start;
     flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
   }
 
   .pagination-buttons {
@@ -300,7 +365,13 @@
   }
 
   .filter-bar {
-    padding: 12px;
+    padding: 10px;
+    margin-top: 10px;
+  }
+
+  .filter-bar,
+  .admin-filters {
+    gap: 8px;
   }
 
   .filter-bar label,
@@ -343,7 +414,7 @@
 
   .form-section,
   .tenant-terms {
-    padding: 12px;
+    padding: 10px;
     min-width: 0;
   }
 
@@ -358,6 +429,7 @@
   }
 
   .payment-history {
-    padding: 12px;
+    margin-top: 10px;
+    padding: 10px;
   }
 }
