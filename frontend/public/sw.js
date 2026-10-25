@@ -1,7 +1,7 @@
 // Caches only the app shell (HTML, hashed build assets, icons) so the installed app opens offline.
 // API responses are never cached: they hold tenant and payment data and must stay fresh.
 const SHELL_CACHE = "rental-mgmt-shell-v1";
-const ASSET_CACHE = "rental-mgmt-assets-v1";
+const ASSET_CACHE = "rental-mgmt-assets-v2";
 const MAX_ASSETS = 80;
 
 self.addEventListener("install", (event) => {
