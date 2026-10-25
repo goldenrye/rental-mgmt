@@ -98,6 +98,36 @@ test("compact mobile spacing preserves readable fields and touch targets", async
   await noOverflow(page);
 });
 
+test("property expand controls align with mobile values and keep desktop styling", async ({ page, isMobile }) => {
+  await login(page);
+  const trigger = page.getByRole("button", { name: "Show units for Property 1", exact: true });
+  if (!isMobile) {
+    await expect(trigger).toHaveCSS("justify-content", "center");
+    return;
+  }
+  for (const width of [320, 375, 390, 844]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(trigger).toHaveCSS("justify-content", "flex-start");
+    const row = page.locator(".property-row").first();
+    const addressLeft = await row.locator("td[data-label='Address']").evaluate((cell) => {
+      const range = document.createRange();
+      range.selectNodeContents(cell);
+      return range.getBoundingClientRect().left;
+    });
+    const chevron = await trigger.locator(".property-chevron").boundingBox();
+    expect(Math.abs(chevron!.x - addressLeft)).toBeLessThan(4);
+    expect((await trigger.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await noOverflow(page);
+  }
+  await trigger.click();
+  const expanded = page.getByRole("button", { name: "Hide units for Property 1", exact: true });
+  await expect(expanded).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText("Suite One", { exact: true })).toBeVisible();
+  await expect(expanded).toHaveCSS("justify-content", "flex-start");
+  await expanded.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+});
+
 test("mobile stylesheet rules have no effect above the desktop breakpoint", async ({ page, isMobile }) => {
   test.skip(isMobile, "Desktop breakpoint isolation");
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -126,6 +156,115 @@ test("mobile stylesheet rules have no effect above the desktop breakpoint", asyn
     expect(unchanged, `Mobile rules must not change desktop styles at ${width}px`).toBe(true);
   }
 });
+
+test("lease tenant names use available mobile width without unnecessary line breaks", async ({ page, isMobile }) => {
+  await login(page);
+  let name = "Alexandra Johnson";
+  await page.route("**/api/tenants", (route) => route.fulfill({ json: [
+    { id: 1, landlord_id: 1, full_name: name, email: "tenant@example.test", phone: "", notes: "" },
+  ] }));
+  await page.locator(".refresh-data").click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Leases", exact: true }).click();
+  const tenants = page.locator(".lease-table td[data-label='Tenants']");
+  await expect(tenants).toContainText("1: Alexandra Johnson");
+  for (const width of isMobile ? [320, 375, 390] : [1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    const lineTops = await tenants.evaluate((cell) => {
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      const tops = new Set<number>();
+      while (walker.nextNode()) {
+        const range = document.createRange();
+        range.selectNodeContents(walker.currentNode);
+        for (const rect of Array.from(range.getClientRects())) tops.add(Math.round(rect.top));
+      }
+      return [...tops];
+    });
+    expect(lineTops, `Tenant name should fit on one line at ${width}px`).toHaveLength(1);
+    await noOverflow(page);
+  }
+  if (isMobile) {
+    name = "Alexandra Elizabeth Johnson-Smith and Christopher Montgomery";
+    await page.locator(".refresh-data").click();
+    await expect(tenants).toContainText(name);
+    await expect(tenants).toHaveCSS("white-space", "normal");
+    expect(await tenants.evaluate((cell) => cell.scrollWidth <= cell.clientWidth)).toBe(true);
+    await noOverflow(page);
+  }
+});
+
+test("amounts align with mobile fields and stay right-aligned on desktop", async ({ page, isMobile }) => {
+  await login(page);
+  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  for (const section of ["Leases", "Rental & Payments", "Property Bills"]) {
+    await navigation.getByRole("button", { name: section, exact: true }).click();
+    const amounts = page.locator(".mobile-table td.numeric");
+    expect(await amounts.count()).toBeGreaterThan(0);
+    for (const amount of await amounts.all()) {
+      await expect(amount).toHaveCSS("text-align", isMobile ? "left" : "right");
+      if (isMobile) {
+        expect(await amount.evaluate((cell) => getComputedStyle(cell, "::before").textAlign)).toBe("left");
+      }
+    }
+    if (section === "Leases" && isMobile) {
+      const valueLeft = (cell: Element) => {
+        const range = document.createRange();
+        range.selectNodeContents(cell);
+        return range.getBoundingClientRect().left;
+      };
+      const rentLeft = await amounts.first().evaluate(valueLeft);
+      const dateLeft = await page.locator(".lease-table td[data-label='Start Date']").evaluate(valueLeft);
+      expect(Math.abs(rentLeft - dateLeft)).toBeLessThan(1);
+    }
+    await noOverflow(page);
+  }
+});
+
+for (const [section, table] of [
+  ["Rental & Payments", ".rental-table"],
+  ["Property Bills", ".property-bill-table"],
+]) {
+  test(`${section} fields share a consistent mobile value column without changing desktop`, async ({ page, isMobile }) => {
+    await login(page);
+    await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: section, exact: true }).click();
+    if (!isMobile) {
+      await expect(page.locator(table)).toHaveCSS("display", "table");
+      await expect(page.locator(`${table} .bill-description`)).toHaveCSS("max-width", "240px");
+      await expect(page.locator(`${table} .bill-description`)).toHaveCSS("text-overflow", "ellipsis");
+      if (section === "Property Bills") {
+        for (const field of [".property-name", ".bill-notes"]) {
+          await expect(page.locator(`${table} ${field}`)).toHaveCSS("max-width", "160px");
+          await expect(page.locator(`${table} ${field}`)).toHaveCSS("text-overflow", "ellipsis");
+        }
+      }
+      return;
+    }
+    for (const width of [320, 375, 390, 844]) {
+      await page.setViewportSize({ width, height: 844 });
+      const fields = await page.locator(`${table} > tbody > tr > td:not([data-full-width='true'])`).evaluateAll((cells) =>
+        cells.map((cell) => {
+          const range = document.createRange();
+          range.selectNodeContents(cell);
+          return {
+            label: cell.getAttribute("data-label"),
+            left: range.getBoundingClientRect().left,
+            columns: getComputedStyle(cell).gridTemplateColumns,
+          };
+        }),
+      );
+      for (const field of fields) {
+        expect(field.columns, `${field.label} columns at ${width}px`).toBe(fields[0].columns);
+        expect(Math.abs(field.left - fields[0].left), `${field.label} value at ${width}px`).toBeLessThan(1);
+      }
+      await noOverflow(page);
+    }
+    if (section === "Rental & Payments") {
+      const tenant = page.locator(".rental-table .link-button");
+      expect((await tenant.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      await tenant.click();
+      await expect(page.getByRole("heading", { name: "Test Tenant payment history" })).toBeVisible();
+    }
+  });
+}
 
 test("action buttons share styles across pages and retain focus and touch targets", async ({ page, isMobile }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });

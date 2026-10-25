@@ -304,6 +304,23 @@
     font-weight: 700;
   }
 
+  /* Labeled mobile rows override desktop column widths and alignment. */
+  .mobile-table > tbody > tr > td[data-label] {
+    text-align: left;
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  /* Names can use the full line instead of the narrower value column. */
+  .lease-table > tbody > tr > td.lease-tenant-names {
+    display: block;
+  }
+
+  .lease-table > tbody > tr > td.lease-tenant-names::before {
+    margin-right: 8px;
+  }
+
   .mobile-table > tbody > tr > td[data-full-width="true"] {
     display: flex;
     flex-wrap: wrap;
@@ -336,6 +353,7 @@
 
   .property-expand-trigger {
     flex-wrap: wrap;
+    justify-content: flex-start;
     min-width: 0;
   }
 

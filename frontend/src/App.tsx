@@ -1388,7 +1388,7 @@ function App() {
                         <td>{lease.start_date}</td>
                         <td>{lease.end_date}</td>
                         <td className="numeric">${lease.monthly_rent}</td>
-                        <td className="lease-text" title={tenantNames || "No tenants"}>{lease.tenants.length}{tenantNames ? `: ${tenantNames}` : ""}</td>
+                        <td className="lease-text lease-tenant-names" title={tenantNames || "No tenants"}>{lease.tenants.length}{tenantNames ? `: ${tenantNames}` : ""}</td>
                         <td className="lease-text" title={lease.notes || undefined}>{lease.notes || "-"}</td>
                         <td>
                           <div className="compact-row-actions">
