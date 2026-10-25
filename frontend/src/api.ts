@@ -256,6 +256,10 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
+  requestPasswordReset: (email: string) =>
+    request<{ detail: string }>("/auth/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }),
+  confirmPasswordReset: (payload: { token: string; new_password: string }) =>
+    request<void>("/auth/password-reset/confirm", { method: "POST", body: JSON.stringify(payload) }),
   listLandlordAccounts: () => request<LandlordAccount[]>("/admin/landlords"),
   listInvites: () => request<LandlordInvite[]>("/admin/invites"),
   createInvite: (payload: { email?: string; expires_in_days: number }) =>

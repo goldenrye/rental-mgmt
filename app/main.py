@@ -73,6 +73,7 @@ from app.mcp_api_keys import router as mcp_api_keys_router
 from app.google_calendar import router as google_calendar_router, calendar_export_scheduler
 from app.web_push import router as web_push_router, push_notification_scheduler
 from app.invites import claim_invite, find_usable_invite
+from app.password_reset import router as password_reset_router
 from app.login_throttle import authenticate, client_ip
 from app.tenant_charges import preview_tenant_charges
 from app.bill_extensions import confirm_extension, preview_extension, track_created_series
@@ -93,6 +94,7 @@ app.include_router(admin_router)
 app.include_router(mcp_api_keys_router)
 app.include_router(google_calendar_router)
 app.include_router(web_push_router)
+app.include_router(password_reset_router)
 
 
 @app.exception_handler(StaleDataError)

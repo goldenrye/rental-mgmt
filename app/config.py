@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     web_push_vapid_private_key: SecretStr = SecretStr("")
     # mailto: or https: contact sent to push services in the VAPID "sub" claim.
     web_push_contact: str = ""
+    # Password reset emails. Empty SMTP_HOST or SMTP_FROM keeps "Forgot password" unavailable.
+    smtp_host: str = ""
+    # 465 uses implicit TLS; any other port uses STARTTLS unless smtp_starttls is false.
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_starttls: bool = True
+    smtp_from: str = ""
+    # Public website URL for links in emails; falls back to google_calendar_app_url.
+    app_url: str = ""
 
     @property
     def allowed_origins(self) -> list[str]:

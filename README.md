@@ -38,6 +38,7 @@ database backups.
 - Payments recorded against bills; each payment recalculates the bill's balance and
   status (open, partial or paid)
 - Property bill filters, lease details and profile and password settings
+- Self-service password reset by emailed link, when the server has SMTP configured
 - Optional Google Calendar export of newly generated rent bills, off by default per landlord
 - Optional browser push reminders before leases end and bills are due, turned on per device
 
@@ -335,6 +336,11 @@ Backend (`api` and `mcp`; read from the environment or the project-root `.env`):
 | `TRUST_PROXY_HEADERS` | `false` | Use nginx's `X-Real-IP` as the client IP. Enable only when the API is reachable solely through nginx. |
 | `WEB_PUSH_VAPID_PRIVATE_KEY` | — | Enables [push notifications](#push-notifications). Generate with `python -m scripts.generate_vapid_key`; `api` only. |
 | `WEB_PUSH_CONTACT` | — | `mailto:` or `https:` contact sent to browser push services; required with the key |
+| `SMTP_HOST` / `SMTP_PORT` | — / `587` | Mail server for [password reset](#password-reset) emails; `api` only. Port 465 uses implicit TLS. |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | — | SMTP login, if the server requires one |
+| `SMTP_STARTTLS` | `true` | Upgrade to TLS on ports other than 465 |
+| `SMTP_FROM` | — | Sender, e.g. `Rental Management <no-reply@your-domain>`; required for password reset |
+| `APP_URL` | `GOOGLE_CALENDAR_APP_URL` | Public website URL used in reset links, e.g. `https://your-domain` |
 
 MCP server (`mcp` only):
 
@@ -425,6 +431,30 @@ MCP data.
 Last activity updates at most once a minute on authenticated API or MCP requests;
 refresh the dashboard to see new values. Logging out revokes the current session,
 and changing your own password revokes all earlier sessions.
+
+### Password reset
+
+Landlords and tenants who forget their password choose **Forgot password?** on the
+sign-in page and enter their email. If the account exists and is active, they get a
+link (`https://<domain>/#reset=…`) that sets a new password. It requires
+`SMTP_HOST`, `SMTP_FROM` and `APP_URL` (or `GOOGLE_CALENDAR_APP_URL`); otherwise the
+page says reset is unavailable and the admin's **Reset password** remains the only way.
+
+- The reply is the same whether or not the email is registered, and the email is sent
+  after the response, so neither reveals which accounts exist.
+- A link expires after 1 hour and works once. Using one voids the account's other
+  links. Each account gets at most 3 reset emails per hour, and nginx applies the
+  sign-in rate limit to both reset endpoints.
+- A reset revokes every session and MCP API key, the same as a password change.
+  It does not reactivate a deactivated account, and the `admin` account (whose login
+  is not an email address) cannot use it.
+- Only a SHA-256 hash of each code is stored, and the code stays out of access logs
+  because it is in the URL fragment. Failed sends are logged without the link.
+- Encrypted data is unaffected: data keys are wrapped by the server's master key, not
+  the password.
+
+On iPhone, the emailed link opens the website; after resetting there, sign in to the
+app with the new password.
 
 ### Sign-in throttling
 
@@ -875,7 +905,7 @@ With `OPEN_REGISTRATION=true` (local development only), step 1 and the
 | Area | Endpoints |
 | --- | --- |
 | Health | `GET /health` |
-| Auth | `POST /auth/register`, `POST /auth/login`, `POST /oauth/token` (password grant, form-encoded), `POST /auth/logout` |
+| Auth | `POST /auth/register`, `POST /auth/login`, `POST /oauth/token` (password grant, form-encoded), `POST /auth/logout`, `POST /auth/password-reset/request`, `POST /auth/password-reset/confirm` |
 | Account | `GET /me`, `PATCH /me`, `POST /me/password` |
 | Properties | `POST /properties`, `GET /properties`, `GET/PATCH/DELETE /properties/{property_id}` |
 | Units | `POST /properties/{property_id}/units`, `GET /properties/{property_id}/units`, `GET /units`, `PATCH/DELETE /units/{unit_id}` |

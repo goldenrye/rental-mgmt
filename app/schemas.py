@@ -117,6 +117,22 @@ class PasswordChangeRequest(BaseModel):
         return value
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+    new_password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
+
+
 class ProfileUpdate(BaseModel):
     full_name: str = Field(min_length=1, max_length=255)
     display_name: Optional[str] = Field(default=None, max_length=255)

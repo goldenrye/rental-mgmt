@@ -149,7 +149,12 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   // Invitation links carry the code in the URL fragment (#invite=...), which is never sent to the server.
   const [inviteCode, setInviteCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("invite") ?? "");
-  const [authMode, setAuthMode] = useState<"login" | "register">(() => inviteCode ? "register" : "login");
+  // Password reset emails link to #reset=..., kept out of server logs the same way.
+  const [resetCode, setResetCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("reset") ?? "");
+  const [authMode, setAuthMode] = useState<"login" | "register" | "forgot" | "reset">(
+    () => inviteCode ? "register" : resetCode ? "reset" : "login",
+  );
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
   const [authForm, setAuthForm] = useState({
     email: "",
     full_name: "",
@@ -436,6 +441,29 @@ function App() {
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (authMode === "forgot") {
+      await withStatus(async () => {
+        const result = await api.requestPasswordReset(authForm.email.trim());
+        setAuthMode("login");
+        setMessage(result.detail);
+      });
+      return;
+    }
+    if (authMode === "reset") {
+      if (authForm.password !== resetConfirmPassword) {
+        setError("The two passwords don't match.");
+        return;
+      }
+      await withStatus(async () => {
+        await api.confirmPasswordReset({ token: resetCode, new_password: authForm.password });
+        setResetCode("");
+        setResetConfirmPassword("");
+        setAuthForm({ ...authForm, password: "" });
+        setAuthMode("login");
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      }, "Password updated. Sign in with your new password.");
+      return;
+    }
     await withStatus(async () => {
       if (authMode === "register") {
         // Landlord accounts are created only through an invitation link.
@@ -753,12 +781,14 @@ function App() {
       <main className="auth-shell">
         <section className="auth-card">
           <p className="eyebrow">Rental Management</p>
-          <h1>Manage leases, rental, and payments</h1>
+          <h1>{authMode === "forgot" ? "Reset your password" : authMode === "reset" ? "Choose a new password" : "Manage leases, rental, and payments"}</h1>
           <p className="muted">
-            Sign in as a landlord to manage properties and tenants.
-            {!inviteCode && " New landlord accounts are by invitation only; ask the administrator for an invitation link."}
+            {authMode === "forgot" && "Enter your account email and we'll send you a link to choose a new password."}
+            {authMode === "reset" && "Enter a new password of at least 8 characters. Signing in again is required on all your devices."}
+            {(authMode === "login" || authMode === "register") && "Sign in as a landlord to manage properties and tenants."}
+            {authMode === "login" && !inviteCode && " New landlord accounts are by invitation only; ask the administrator for an invitation link."}
           </p>
-          {inviteCode && (
+          {inviteCode && (authMode === "login" || authMode === "register") && (
             <div className="toggle">
               <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>
                 Login
@@ -782,11 +812,11 @@ function App() {
                 />
               </label>
             )}
-            <label>
-              {authMode === "register" ? "Email" : "Email or admin username"}
+            {authMode !== "reset" && <label>
+              {authMode === "login" ? "Email or admin username" : "Email"}
               <input
                 required
-                type={authMode === "register" ? "email" : "text"}
+                type={authMode === "login" ? "text" : "email"}
                 autoComplete="username"
                 autoCapitalize="none"
                 autoCorrect="off"
@@ -794,23 +824,51 @@ function App() {
                 value={authForm.email}
                 onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
               />
-            </label>
-            <label>
-              Password
+            </label>}
+            {authMode !== "forgot" && <label>
+              {authMode === "reset" ? "New password" : "Password"}
               <input
                 required
                 type="password"
-                minLength={authMode === "register" ? 8 : undefined}
+                minLength={authMode === "login" ? undefined : 8}
                 maxLength={72}
-                autoComplete={authMode === "register" ? "new-password" : "current-password"}
+                autoComplete={authMode === "login" ? "current-password" : "new-password"}
                 value={authForm.password}
                 onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
               />
-            </label>
+            </label>}
+            {authMode === "reset" && <label>
+              Confirm new password
+              <input
+                required
+                type="password"
+                minLength={8}
+                maxLength={72}
+                autoComplete="new-password"
+                value={resetConfirmPassword}
+                onChange={(event) => setResetConfirmPassword(event.target.value)}
+              />
+            </label>}
             <button disabled={loading} className="primary">
-              {loading ? "Working..." : authMode === "register" ? "Create Account" : "Login"}
+              {loading ? "Working..." : {
+                login: "Login", register: "Create Account", forgot: "Send Reset Link", reset: "Set New Password",
+              }[authMode]}
             </button>
           </form>
+          {authMode === "login" && (
+            <button type="button" className="link-button" onClick={() => {
+              setAuthMode("forgot");
+              setError("");
+              setMessage("");
+            }}>Forgot password?</button>
+          )}
+          {(authMode === "forgot" || authMode === "reset") && (
+            <button type="button" className="link-button" onClick={() => {
+              setAuthMode("login");
+              setError("");
+              setMessage("");
+            }}>Back to sign in</button>
+          )}
           {isNative && <InvitationEntry onApply={(code) => {
             setInviteCode(code);
             setAuthMode("register");
