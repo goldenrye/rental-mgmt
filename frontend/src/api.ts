@@ -2,6 +2,16 @@ import { runtimeConfig, sessionStorage } from "./platform";
 
 export type UserRole = "landlord" | "tenant" | "super_admin";
 
+export type GoogleCalendarStatus = {
+  available: boolean;
+  enabled: boolean;
+  connected: boolean;
+  calendar_name: string | null;
+  pending_exports: number;
+  last_synced_at: string | null;
+  last_error: string | null;
+};
+
 export type McpApiKey = {
   id: string;
   name: string;
@@ -246,6 +256,13 @@ export const api = {
   resetLandlordPassword: (userId: number, new_password: string) =>
     request<void>(`/admin/landlords/${userId}/password`, { method: "POST", body: JSON.stringify({ new_password }) }),
   me: () => request<User>("/me"),
+  googleCalendarStatus: () => request<GoogleCalendarStatus>("/me/google-calendar"),
+  setGoogleCalendarEnabled: (enabled: boolean) =>
+    request<GoogleCalendarStatus>("/me/google-calendar", { method: "PUT", body: JSON.stringify({ enabled }) }),
+  connectGoogleCalendar: () => request<{ authorization_url: string }>("/me/google-calendar/connect", {
+    method: "POST", credentials: "include",
+  }),
+  disconnectGoogleCalendar: () => request<void>("/me/google-calendar", { method: "DELETE" }),
   listMcpApiKeys: () => request<McpApiKey[]>("/me/mcp-api-keys"),
   createMcpApiKey: (payload: { name: string; current_password: string; expires_in_days: number | null }) =>
     request<McpApiKey & { api_key: string }>("/me/mcp-api-keys", { method: "POST", body: JSON.stringify(payload) }),

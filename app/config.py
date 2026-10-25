@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # Off: landlords sign up only with an admin invitation and tenants cannot self-register.
     # On (local development only): anyone can register an active landlord or tenant account.
     open_registration: bool = False
+    google_calendar_client_id: str = ""
+    google_calendar_client_secret: SecretStr = SecretStr("")
+    google_calendar_redirect_uri: str = ""
+    # Used only for links inside exported events, never inferred from request headers.
+    google_calendar_app_url: str = ""
 
     @property
     def allowed_origins(self) -> list[str]:

@@ -70,6 +70,7 @@ from app.security import decode_access_token, hash_password, verify_password
 from app.account_access import bootstrap_super_admin, ensure_access, issue_login, revoke_all_sessions, revoke_session
 from app.admin import router as admin_router
 from app.mcp_api_keys import router as mcp_api_keys_router
+from app.google_calendar import router as google_calendar_router, calendar_export_scheduler
 from app.invites import claim_invite, find_usable_invite
 from app.login_throttle import authenticate, client_ip
 from app.tenant_charges import preview_tenant_charges
@@ -89,6 +90,7 @@ with SessionLocal() as db:
 app = FastAPI(title="Rental Management API", version="1.0.0")
 app.include_router(admin_router)
 app.include_router(mcp_api_keys_router)
+app.include_router(google_calendar_router)
 
 
 @app.exception_handler(StaleDataError)
@@ -97,6 +99,7 @@ async def encrypted_record_conflict(request: Request, exc: StaleDataError) -> JS
 
 
 monthly_bill_scheduler_task: Optional[asyncio.Task[None]] = None
+calendar_export_scheduler_task: Optional[asyncio.Task[None]] = None
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -180,17 +183,18 @@ def _manual_bill_due_dates(payload: ManualBillCreate | PropertyBillCreate) -> li
 
 @app.on_event("startup")
 async def start_monthly_bill_scheduler() -> None:
-    global monthly_bill_scheduler_task
+    global monthly_bill_scheduler_task, calendar_export_scheduler_task
     monthly_bill_scheduler_task = asyncio.create_task(monthly_bill_scheduler())
+    calendar_export_scheduler_task = asyncio.create_task(calendar_export_scheduler())
 
 
 @app.on_event("shutdown")
 async def stop_monthly_bill_scheduler() -> None:
-    if monthly_bill_scheduler_task is None:
-        return
-    monthly_bill_scheduler_task.cancel()
-    with suppress(asyncio.CancelledError):
-        await monthly_bill_scheduler_task
+    for task in (monthly_bill_scheduler_task, calendar_export_scheduler_task):
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 def serialize_lease(lease: Lease) -> LeaseRead:

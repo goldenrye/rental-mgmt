@@ -102,6 +102,7 @@ def generate_bills_for_lease(
     active_start = max(lease.start_date, period_start)
     active_end = min(lease.end_date, period_end)
     bills: list[RentalBill] = []
+    new_bills: list[RentalBill] = []
 
     for lease_tenant in lease_tenants:
         tenant_id = lease_tenant.tenant_id
@@ -138,10 +139,13 @@ def generate_bills_for_lease(
         )
         db.add(bill)
         bills.append(bill)
+        new_bills.append(bill)
 
     if completed is None:
         db.add(RentBillingRun(lease_id=lease.id, bill_year=billing_date.year, bill_month=billing_date.month))
     db.flush()
+    from app.google_calendar import enqueue_rent_exports
+    enqueue_rent_exports(db, new_bills)
     return bills
 
 

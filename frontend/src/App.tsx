@@ -25,6 +25,7 @@ import { DataTable } from "./PaginatedEntries";
 import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
 import { AdminDashboard } from "./AdminDashboard";
 import { EncryptionSettings } from "./EncryptionSettings";
+import { GoogleCalendarSettings } from "./GoogleCalendarSettings";
 import { McpApiKeysDialog } from "./McpApiKeysDialog";
 import { AppNavigation } from "./AppNavigation";
 import type { Tab } from "./AppNavigation";
@@ -934,6 +935,9 @@ function App() {
             </label>
             {user.role === "landlord" && (
               <EncryptionSettings user={user} loading={loading} onBusyChange={setLoading} onChanged={setUser} />
+            )}
+            {user.role === "landlord" && (
+              <GoogleCalendarSettings loading={loading} onBusyChange={setLoading} />
             )}
             <div className="form-section">
               <h3>Change password</h3>

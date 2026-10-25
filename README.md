@@ -14,6 +14,7 @@ database backups.
 - [Administration](#administration)
 - [Database encryption](#database-encryption)
 - [Billing guide](#billing-guide)
+- [Google Calendar exports](#google-calendar-exports)
 - [MCP server for AI agents](#mcp-server-for-ai-agents)
 - [API](#api)
 - [Testing](#testing)
@@ -36,6 +37,7 @@ database backups.
 - Payments recorded against bills; each payment recalculates the bill's balance and
   status (open, partial or paid)
 - Property bill filters, lease details and profile and password settings
+- Optional Google Calendar export of newly generated rent bills, off by default per landlord
 
 **Super admin**
 
@@ -111,7 +113,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python scripts/init_env.py
-# Optional: only needed before landlords can enable encryption.
+# Optional: needed before landlords can enable encryption or connect Google Calendar.
 # python -m scripts.manage_encryption init-key
 uvicorn app.main:app --reload
 ```
@@ -694,6 +696,81 @@ is reached from other machines, set `RENTAL_MGMT_MCP_PUBLIC_BASE_URL` and
 (`http://0.0.0.0:8001` inside Docker) is not reachable by clients. Keep remote
 endpoints on HTTPS and behind a firewall, because they expose rental, lease, tenant,
 bill and payment data.
+
+## Google Calendar exports
+
+In **Edit Profile > Google Calendar**, each landlord can connect Google and separately
+enable **Automatically sync new rental bills to Google Calendar**. Both new and
+existing accounts start **off**. Connecting alone does not enable exports.
+
+This is one-way creation of all-day due-date events in an app-created **Rental Due
+Dates** calendar. Events contain the tenant and property names, unit, original rent
+amount, billing month, bill ID, and a link to the rental website. They are private,
+do not block time, and do not invite tenants or configure reminders.
+
+- Only newly generated `rent` bills created while enabled are queued, including
+  rent generated on lease creation, manual current-month generation, and the monthly scheduler.
+- Existing rent is not backfilled. Manual charges, utility charges, and property bills are excluded.
+- Later payments, edits, and bill deletions do not update or remove exported events.
+- Turning off or disconnecting cancels pending exports and keeps Google events.
+  Re-enabling starts with subsequently generated bills; cancelled exports are not replayed.
+- Deleting a bill before delivery removes its pending export.
+- The worker runs every minute, processes up to 100 pending exports per pass, and
+  retries temporary failures with backoff up to an hour. Persistent event IDs
+  prevent duplicate events on retries or concurrent API workers.
+- Check pending exports, last successful export, and errors in the profile.
+  Revoked Google authorization disables exports and requires reconnecting and enabling again.
+
+### Server setup
+
+1. In Google Cloud Console, enable the **Google Calendar API**, configure the OAuth
+   consent screen, and create an OAuth client of type **Web application**.
+2. Request only `https://www.googleapis.com/auth/calendar.app.created`. This limits
+   calendar access to secondary calendars created by this app, not the user's primary calendar.
+3. Add an exact authorized redirect URI:
+   `https://YOUR_DOMAIN/api/google-calendar/callback` in production, or
+   `http://localhost:8000/google-calendar/callback` for direct local API development.
+4. Set these **backend-only** environment variables in `.env`:
+
+   ```dotenv
+   GOOGLE_CALENDAR_CLIENT_ID=your-web-client-id
+   GOOGLE_CALENDAR_CLIENT_SECRET=your-web-client-secret
+   GOOGLE_CALENDAR_REDIRECT_URI=https://YOUR_DOMAIN/api/google-calendar/callback
+   GOOGLE_CALENDAR_APP_URL=https://YOUR_DOMAIN
+   ```
+
+5. Configure the existing `DATA_ENCRYPTION_MASTER_KEY` or `DATA_ENCRYPTION_KEY_FILE`.
+   Google refresh/access tokens are always encrypted independently of the landlord's
+   rental-data encryption preference. For a fresh local key, use
+   `python -m scripts.manage_encryption init-key`. Never replace a key used by an
+   existing deployment. Keep the key separate from database backups.
+6. Rebuild/restart the API and frontend. Compose passes the Google settings only
+   to the API. Two integration tables are created automatically at startup; no
+   existing account is opted in.
+7. Sign in on the website, open Edit Profile, and allow the Google connection popup.
+   Grant permission, close the completion tab, click **Refresh Calendar Status**,
+   then enable automatic exports. The first connection creates the dedicated calendar.
+
+Use the same hostname throughout local testing (`localhost` or `127.0.0.1`, not
+both) because OAuth is bound to a short-lived HttpOnly browser cookie. Production
+requires HTTPS. CORS must allow the actual frontend origin. The API uses one-time
+OAuth state, PKCE, and account-version checks; Google secrets are never returned
+to the frontend.
+
+For the packaged iPhone client, connect Google on the website in a normal browser
+first; embedded native webviews are not used for Google authorization. Refresh
+status in the app to enable, disable, or disconnect the integration.
+
+Google projects in **Testing** mode require approved test users and may issue
+refresh tokens that expire after seven days. Complete Google's publishing and,
+where required, verification process before offering this to production users.
+Disconnect removes locally stored credentials but keeps the calendar; revoke the
+app's Google grant in Google Account permissions to remove Google's authorization
+as well (this may affect other landlords connected using the same Google account).
+
+Calendar endpoints (landlord authentication required except the OAuth callback):
+`GET/PUT/DELETE /me/google-calendar`, `POST /me/google-calendar/connect`, and
+`GET /google-calendar/callback`.
 
 ## API
 

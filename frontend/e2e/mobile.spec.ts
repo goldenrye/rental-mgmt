@@ -18,6 +18,10 @@ async function mockAPI(page: Page, admin = false) {
     if (path === "/auth/login") body = { access_token: "test-session", token_type: "bearer" };
     else if (path === "/auth/logout") return route.fulfill({ status: 204 });
     else if (path === "/me") body = user;
+    else if (path === "/me/google-calendar") body = {
+      available: false, enabled: false, connected: false, calendar_name: null,
+      pending_exports: 0, last_synced_at: null, last_error: null,
+    };
     else if (path === "/properties") body = method === "POST" ? { ...properties[0], ...route.request().postDataJSON() } : properties;
     else if (path === "/units") body = [{ id: 1, property_id: 1, name: "Suite One", description: "Upstairs" }];
     else if (path === "/tenants") body = [tenant];
@@ -498,6 +502,88 @@ test("super admin management and invitation links work on mobile and desktop", a
   await expect(page.getByLabel("Invitation link", { exact: true })).toHaveValue("http://127.0.0.1:5179/#invite=test-invitation-1234567890");
   await page.getByRole("button", { name: "Reset password for owner@example.test" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
+  await noOverflow(page);
+});
+
+test("Google Calendar is off and unavailable until the server is configured", async ({ page }) => {
+  await login(page);
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Google Calendar: Off" })).toBeVisible();
+  const toggle = page.getByRole("checkbox", { name: "Automatically sync new rental bills to Google Calendar" });
+  await expect(toggle).not.toBeChecked();
+  await expect(toggle).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Connect Google Calendar", exact: true })).toBeDisabled();
+  await noOverflow(page);
+});
+
+test("Google Calendar connection requires a separate opt-in and persists its setting", async ({ page, context }) => {
+  await login(page);
+  let connected = false;
+  let enabled = false;
+  let failSave = false;
+  const changes: boolean[] = [];
+  await page.route("**/api/me/google-calendar", async (route) => {
+    if (route.request().method() === "PUT") {
+      if (failSave) return route.fulfill({ status: 503, json: { detail: "Calendar settings could not be saved." } });
+      const payload = route.request().postDataJSON();
+      expect(Object.keys(payload)).toEqual(["enabled"]);
+      enabled = payload.enabled;
+      changes.push(enabled);
+    }
+    if (route.request().method() === "DELETE") {
+      connected = false;
+      enabled = false;
+      return route.fulfill({ status: 204 });
+    }
+    return route.fulfill({ json: {
+      available: true, connected, enabled, calendar_name: connected ? "Rental Due Dates" : null,
+      pending_exports: 0, last_synced_at: null, last_error: null,
+    } });
+  });
+  await page.route("**/api/me/google-calendar/connect", (route) => {
+    expect(route.request().method()).toBe("POST");
+    return route.fulfill({ json: { authorization_url: "https://accounts.google.com/o/oauth2/v2/auth?state=test" } });
+  });
+  await context.route("https://accounts.google.com/**", (route) => {
+    connected = true;
+    return route.fulfill({ contentType: "text/html", body: "<h1>Test Google consent completed</h1>" });
+  });
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
+  const toggle = page.getByRole("checkbox", { name: "Automatically sync new rental bills to Google Calendar" });
+  await expect(toggle).not.toBeChecked();
+  await expect(toggle).toBeDisabled();
+  const popupPromise = context.waitForEvent("page");
+  await page.getByRole("button", { name: "Connect Google Calendar", exact: true }).click();
+  const popup = await popupPromise;
+  await popup.waitForURL("https://accounts.google.com/**");
+  await expect(popup.getByRole("heading", { name: "Test Google consent completed" })).toBeVisible();
+  await popup.close();
+  await page.getByRole("button", { name: "Refresh Calendar Status" }).click();
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).not.toBeChecked();
+  expect(changes).toEqual([]);
+  page.on("dialog", (dialog) => dialog.accept());
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+  await expect(page.getByRole("heading", { name: "Google Calendar: On" })).toBeVisible();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
+  await expect(toggle).toBeChecked();
+  failSave = true;
+  await toggle.click();
+  await expect(page.getByText("Calendar settings could not be saved.")).toBeVisible();
+  await expect(toggle).toBeChecked();
+  failSave = false;
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await expect(page.getByText(/Pending exports were cancelled/)).toBeVisible();
+  expect(changes).toEqual([true, false]);
+  await page.getByRole("button", { name: "Disconnect Google Calendar", exact: true }).click();
+  await expect(toggle).toBeDisabled();
   await noOverflow(page);
 });
 

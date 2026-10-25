@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, UniqueConstraint, false, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text, UniqueConstraint, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -152,6 +152,36 @@ class LandlordProfile(Base):
     )
     tenants: Mapped[List["TenantProfile"]] = relationship(back_populates="landlord")
     leases: Mapped[List["Lease"]] = relationship(back_populates="landlord")
+
+
+class GoogleCalendarConnection(Base):
+    __tablename__ = "google_calendar_connections"
+
+    landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    calendar_id: Mapped[Optional[str]] = mapped_column(String(1024))
+    credentials: Mapped[Optional[str]] = mapped_column(Text)
+    oauth_state_hash: Mapped[Optional[str]] = mapped_column(String(64), unique=True)
+    oauth_browser_hash: Mapped[Optional[str]] = mapped_column(String(64))
+    oauth_verifier: Mapped[Optional[str]] = mapped_column(Text)
+    oauth_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    oauth_token_version: Mapped[Optional[int]] = mapped_column()
+    last_error: Mapped[Optional[str]] = mapped_column(String(255))
+    last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class GoogleCalendarExport(Base):
+    """Transactional outbox: random event IDs make retries safe even after a lost response."""
+
+    __tablename__ = "google_calendar_exports"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    bill_id: Mapped[int] = mapped_column(ForeignKey("rental_bills.id", ondelete="CASCADE"), unique=True, nullable=False)
+    landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(nullable=False, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    bill: Mapped["RentalBill"] = relationship(back_populates="calendar_exports")
 
 
 class TenantProfile(EncryptedRecord, Base):
@@ -314,6 +344,7 @@ class RentalBill(EncryptedRecord, Base):
     lease: Mapped["Lease"] = relationship(back_populates="bills")
     tenant: Mapped["TenantProfile"] = relationship(back_populates="bills")
     payments: Mapped[List["Payment"]] = relationship(back_populates="bill", cascade="all, delete-orphan")
+    calendar_exports: Mapped[List["GoogleCalendarExport"]] = relationship(back_populates="bill", cascade="all, delete-orphan")
 
     @property
     def tenant_name(self) -> str:

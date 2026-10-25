@@ -82,6 +82,36 @@ test("native secure storage fails closed", async ({ page }) => {
   expect(await page.evaluate(() => localStorage.getItem("rental_mgmt_token"))).toBeNull();
 });
 
+test("native calendar settings use website authorization and keep exports opt-in", async ({ page }, testInfo) => {
+  await nativeBridge(page);
+  let connected = false;
+  let enabled = false;
+  await page.route("https://rental-test.example/api/me/google-calendar", (route) => {
+    if (route.request().method() === "PUT") enabled = route.request().postDataJSON().enabled;
+    return route.fulfill({ json: {
+      available: true, enabled, connected, calendar_name: connected ? "Rental Due Dates" : null,
+      pending_exports: 0, last_synced_at: null, last_error: null,
+    } });
+  });
+  await page.goto("/");
+  await signIn(page);
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Connect Google Calendar", exact: true })).toBeDisabled();
+  await expect(page.getByRole("link", { name: "rental website" })).toHaveAttribute("href", "https://rental-test.example");
+  const toggle = page.getByRole("checkbox", { name: "Automatically sync new rental bills to Google Calendar" });
+  await expect(toggle).toBeDisabled();
+  connected = true;
+  await page.getByRole("button", { name: "Refresh Calendar Status" }).click();
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).not.toBeChecked();
+  page.on("dialog", (dialog) => dialog.accept());
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+  await page.getByRole("heading", { name: "Google Calendar: On" }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("google-calendar-settings.png") });
+});
+
 test("native registration accepts the existing website invitation", async ({ page }) => {
   await nativeBridge(page);
   await page.goto("/");
