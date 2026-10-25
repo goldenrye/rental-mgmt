@@ -4,6 +4,7 @@ import { api } from "./api";
 import type { PropertyBill, PropertyBillExtensionPreview } from "./api";
 import { billRecurrenceLabels } from "./propertyBillFilters";
 import { DataTable } from "./PaginatedEntries";
+import { DateInput } from "./DateInput";
 
 type Props = {
   bill: PropertyBill;
@@ -84,8 +85,8 @@ export function ExtendBillDialog({ bill, onClose, onGenerated }: Props) {
         <div className="two-columns">
           <label>
             Extend through
-            <input
-              autoFocus required type="date" value={through} disabled={loading || saving}
+            <DateInput
+              autoFocus required value={through} disabled={loading || saving}
               onChange={(event) => { setThrough(event.target.value); setPreview(null); }}
             />
           </label>

@@ -19,6 +19,7 @@ import {
 import { PropertyBillFilterDialog } from "./PropertyBillFilterDialog";
 import { TenantChargeDialog } from "./TenantChargeDialog";
 import { ExtendBillDialog } from "./ExtendBillDialog";
+import { DateInput } from "./DateInput";
 import { PaymentDialog } from "./PaymentDialog";
 import { DataTable } from "./PaginatedEntries";
 import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
@@ -1547,18 +1548,16 @@ function App() {
                     <div className="two-columns">
                       <label>
                         Start date
-                        <input
+                        <DateInput
                           required
-                          type="date"
                           value={leaseForm.start_date}
                           onChange={(event) => setLeaseForm({ ...leaseForm, start_date: event.target.value })}
                         />
                       </label>
                       <label>
                         End date
-                        <input
+                        <DateInput
                           required
-                          type="date"
                           value={leaseForm.end_date}
                           onChange={(event) => setLeaseForm({ ...leaseForm, end_date: event.target.value })}
                         />
@@ -1781,9 +1780,8 @@ function App() {
                     </label>
                     <label>
                       Due date
-                      <input
+                      <DateInput
                         required
-                        type="date"
                         max="9999-12-31"
                         disabled={loading}
                         value={billEdit.due_date}
@@ -1889,9 +1887,8 @@ function App() {
                     </label>
                     <label>
                       Due date
-                      <input
+                      <DateInput
                         required
-                        type="date"
                         value={manualBillForm.due_date}
                         onChange={(event) => setManualBillForm({ ...manualBillForm, due_date: event.target.value })}
                       />
@@ -1900,18 +1897,16 @@ function App() {
                       <div className="two-columns">
                         <label>
                           Period start
-                          <input
+                          <DateInput
                             required
-                            type="date"
                             value={manualBillForm.period_start}
                             onChange={(event) => setManualBillForm({ ...manualBillForm, period_start: event.target.value })}
                           />
                         </label>
                         <label>
                           Period end
-                          <input
+                          <DateInput
                             required
-                            type="date"
                             value={manualBillForm.period_end}
                             onChange={(event) => setManualBillForm({ ...manualBillForm, period_end: event.target.value })}
                           />

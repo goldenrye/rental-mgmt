@@ -38,6 +38,62 @@ textarea {
   resize: vertical;
 }
 
+.date-field {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.date-field > input {
+  flex: 1;
+  min-width: 0;
+}
+
+.date-calendar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  min-height: 44px;
+  color: #334155;
+  background: #fff;
+  border: 1px solid var(--button-border);
+  border-radius: var(--button-radius);
+}
+
+.date-calendar input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.date-calendar input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.date-calendar:focus-within,
+.date-field > input:focus-visible {
+  outline: 3px solid var(--button-accent);
+  outline-offset: 2px;
+}
+
+.date-calendar-disabled {
+  opacity: 0.5;
+}
+
+.date-calendar-disabled input {
+  cursor: not-allowed;
+}
+
 h1,
 h2 {
   margin: 0;

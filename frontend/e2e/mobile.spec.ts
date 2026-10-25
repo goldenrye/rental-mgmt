@@ -216,6 +216,89 @@ test("bill previews and payment confirmation retain their request contracts", as
   await expect(dialog).toHaveCount(0);
 });
 
+test("dates support typing, calendar changes, validation and resets across forms", async ({ page }) => {
+  await login(page);
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await nav.getByRole("button", { name: "Property Bills", exact: true }).click();
+  await page.getByRole("button", { name: 'Extend repeated bill "Water bill"' }).click();
+  let dialog = page.getByRole("dialog");
+  const through = dialog.getByLabel("Extend through", { exact: true });
+  await expect(through).toHaveAttribute("type", "text");
+  await through.pressSequentially("2032-02-");
+  await expect(through).toHaveValue("2032-02-");
+  await through.pressSequentially("29");
+  const previewRequest = page.waitForRequest((r) => r.url().endsWith("/extension-preview"));
+  await dialog.getByRole("button", { name: "Preview Bills", exact: true }).click();
+  expect((await previewRequest).postDataJSON()).toEqual({ through: "2032-02-29" });
+  await expect(dialog.getByRole("button", { name: "Confirm & Generate" })).toBeEnabled();
+  let invalidRequests = 0;
+  page.on("request", (r) => { if (r.url().endsWith("/extension-preview")) invalidRequests++; });
+  await through.fill("2031-02-29");
+  await expect(dialog.getByRole("button", { name: "Confirm & Generate" })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Preview Bills", exact: true }).click();
+  expect(await through.evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(false);
+  expect(invalidRequests).toBe(0);
+  const calendar = dialog.getByLabel("Choose date with calendar", { exact: true });
+  await calendar.fill("2032-03-31");
+  await expect(through).toHaveValue("2032-03-31");
+  expect(await through.evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(true);
+  await noOverflow(page);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  await page.getByRole("button", { name: 'Edit property bill "Water bill"' }).click();
+  dialog = page.getByRole("dialog");
+  const due = dialog.getByLabel("Due date", { exact: true });
+  await due.fill("2032-04-30");
+  await expect(dialog.getByLabel("Choose date with calendar")).toHaveValue("2032-04-30");
+  const edited = page.waitForRequest((r) => r.url().endsWith("/property-bills/1") && r.method() === "PATCH");
+  await page.route("**/api/property-bills/1", (route) => route.fulfill({ json: {
+    id: 1, landlord_id: 1, property_id: 1, title: "Water bill", bill_type: "water",
+    recurrence: "monthly", status: "unpaid", ...route.request().postDataJSON(),
+  } }));
+  await dialog.getByRole("button", { name: "Save Bill", exact: true }).click();
+  expect((await edited).postDataJSON().due_date).toBe("2032-04-30");
+
+  await page.getByRole("button", { name: "Create Property Bill", exact: true }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByRole("combobox", { name: "Repeat", exact: true }).selectOption("monthly");
+  for (const [label, value] of [["Due date", "2032-05-15"], ["Period start", "2032-05-01"], ["Period end", "2032-12-31"]]) {
+    const field = dialog.getByLabel(label, { exact: true });
+    await expect(field).toHaveAttribute("type", "text");
+    await field.fill(value);
+    await expect(field).toHaveValue(value);
+  }
+  await noOverflow(page);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  await page.getByRole("button", { name: /Filters/ }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Reset Filters" }).click();
+  await dialog.getByLabel("Start date (due from)", { exact: true }).fill("2032-05-01");
+  await dialog.getByLabel("End date (due through)", { exact: true }).fill("2032-05-31");
+  await dialog.getByLabel("Exact due date", { exact: true }).fill("2032-05-15");
+  await dialog.getByRole("button", { name: "Apply Filters" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".bill-filter-summary")).toContainText("2032-05-15");
+  await page.getByRole("button", { name: /Filters/ }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Exact due date", { exact: true }).fill("invalid");
+  await dialog.getByRole("button", { name: "Reset Filters" }).click();
+  for (const field of await dialog.locator(".date-field > input").all()) {
+    await expect(field).toHaveValue("");
+    expect(await field.evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(true);
+  }
+  await dialog.getByRole("button", { name: "Apply Filters" }).click();
+
+  await nav.getByRole("button", { name: "Leases", exact: true }).click();
+  await page.getByRole("button", { name: "Add Lease", exact: true }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Start date", { exact: true }).fill("2032-01-01");
+  await dialog.getByLabel("End date", { exact: true }).fill("2032-12-31");
+  await expect(dialog.getByLabel("Start date", { exact: true })).toHaveAttribute("type", "text");
+  await expect(dialog.getByLabel("End date", { exact: true })).toHaveValue("2032-12-31");
+  await noOverflow(page);
+});
+
 test("super admin management and invitation links work on mobile and desktop", async ({ page }) => {
   await login(page, true);
   await expect(page.getByRole("heading", { name: "Landlord Management" })).toBeVisible();

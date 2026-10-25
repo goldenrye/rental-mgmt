@@ -8,6 +8,7 @@ import {
   emptyPropertyBillFilters,
 } from "./propertyBillFilters";
 import type { PropertyBillFilters } from "./propertyBillFilters";
+import { DateInput } from "./DateInput";
 
 type Props = {
   filters: PropertyBillFilters;
@@ -67,15 +68,15 @@ export function PropertyBillFilterDialog({ filters, properties, onApply, onClose
         <div className="two-columns">
           <label>
             Start date (due from)
-            <input autoFocus type="date" max="9999-12-31" value={draft.start} onChange={(event) => update("start", event.target.value)} />
+            <DateInput autoFocus max="9999-12-31" value={draft.start} onChange={(event) => update("start", event.target.value)} />
           </label>
           <label>
             End date (due through)
-            <input type="date" max="9999-12-31" value={draft.end} onChange={(event) => update("end", event.target.value)} />
+            <DateInput max="9999-12-31" value={draft.end} onChange={(event) => update("end", event.target.value)} />
           </label>
           <label>
             Exact due date
-            <input type="date" max="9999-12-31" value={draft.due_date} onChange={(event) => update("due_date", event.target.value)} />
+            <DateInput max="9999-12-31" value={draft.due_date} onChange={(event) => update("due_date", event.target.value)} />
           </label>
           <label>
             Bill category
