@@ -49,8 +49,9 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
   if (request.mode === "navigate") {
-    // /api, /mcp, and OAuth pages are served by the backend, not the SPA.
-    if (/^\/(api|mcp|\.well-known)(\/|$)/.test(url.pathname)) return;
+    // /api, /mcp, and OAuth pages are served by the backend, not the SPA; static pages
+    // such as /privacy.html must not replace the cached app shell.
+    if (/^\/(api|mcp|\.well-known)(\/|$)/.test(url.pathname) || url.pathname.endsWith(".html")) return;
     event.respondWith(networkFirstShell(request));
   } else if (isStaticAsset(url)) {
     event.respondWith(cacheFirstAsset(request));

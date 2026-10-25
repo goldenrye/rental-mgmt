@@ -153,6 +153,11 @@ td:first-child {
   width: 100%;
 }
 
+.auth-legal {
+  font-size: 0.85rem;
+  margin: 16px 0 0;
+}
+
 .admin-password-card {
   max-width: 520px;
   margin-bottom: 20px;

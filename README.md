@@ -276,6 +276,14 @@ nginx rate-limits per client IP:
   minute (burst 5)
 - `/mcp` and its OAuth discovery paths: 10 requests per second (burst 40)
 
+### Uptime monitoring
+
+`GET /api/health` returns `200 {"status":"ok"}` only when the API can reach the
+database, and `503` otherwise. Point an external monitor (for example UptimeRobot's
+free HTTP(s) check, every 5 minutes) at `https://<DOMAIN>/api/health` so you are
+emailed when the site, the API or the database goes down. A monitor on the same
+EC2 instance cannot report the instance itself being down.
+
 ### Database backups
 
 The production `backup` service runs `pg_dump` at startup and then every
@@ -455,6 +463,13 @@ page says reset is unavailable and the admin's **Reset password** remains the on
 
 On iPhone, the emailed link opens the website; after resetting there, sign in to the
 app with the new password.
+
+### Privacy & Terms
+
+`frontend/public/privacy.html` is a static page at `https://<DOMAIN>/privacy.html`,
+linked from the sign-in page. Update it (and its effective date) when the data the
+app stores, its third-party services, the backup retention or the contact address
+change.
 
 ### Sign-in throttling
 

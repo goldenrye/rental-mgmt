@@ -390,8 +390,14 @@ def assert_no_overlapping_lease(
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> JSONResponse:
+    # Uptime monitors poll this, so it fails when the database is unreachable, not only when the API is down.
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse({"status": "error", "database": "unavailable"}, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return JSONResponse({"status": "ok"})
 
 
 @app.post("/auth/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)

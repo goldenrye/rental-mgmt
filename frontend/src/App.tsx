@@ -31,7 +31,7 @@ import { McpApiKeysDialog } from "./McpApiKeysDialog";
 import { AppNavigation } from "./AppNavigation";
 import type { Tab } from "./AppNavigation";
 import { InvitationEntry } from "./InvitationEntry";
-import { isNative } from "./platform";
+import { isNative, runtimeConfig } from "./platform";
 import { billCategoryLabels, billRecurrenceLabels, defaultPropertyBillFilters, emptyPropertyBillFilters, filterPropertyBills } from "./propertyBillFilters";
 import { sortBillsByDueDate } from "./billSorting";
 import type { PropertyBillFilters } from "./propertyBillFilters";
@@ -875,6 +875,10 @@ function App() {
             setError("");
           }} />}
           <Status error={error} message={message} />
+          <p className="muted auth-legal">
+            {authMode === "register" && "By creating an account you agree to the "}
+            <a href={`${runtimeConfig.publicAppURL}/privacy.html`} target="_blank" rel="noopener">Privacy &amp; Terms</a>
+          </p>
         </section>
       </main>
     );
