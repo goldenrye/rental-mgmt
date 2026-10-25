@@ -72,6 +72,16 @@ server {
     proxy_read_timeout 1h;
   }
 
+  # The service worker and manifest must be revalidated so new deploys reach installed apps.
+  location ~ ^/(sw\.js|manifest\.webmanifest)$ {
+    types { application/javascript js; application/manifest+json webmanifest; }
+    add_header Cache-Control "no-cache" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+  }
+
   location / {
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Content-Type-Options "nosniff" always;
