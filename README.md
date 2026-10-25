@@ -953,14 +953,21 @@ can enable encryption. Choose one source and use the same key for API and MCP:
 Docker Compose mounts `.secrets` read-only at `/run/secrets` in API and MCP only,
 not the database or backup service. For a container-only installation, first
 create a private `.secrets` directory, then initialize the file with a one-off
-writable mount:
+writable mount. The mount must use a different path: the service's own read-only
+`/run/secrets` mount takes precedence over a writable one at the same path.
+Then restart API and MCP:
 
 ```bash
 mkdir -m 700 .secrets
 docker compose build api
-docker compose run --rm --no-deps -v "$PWD/.secrets:/run/secrets:rw" api \
+docker compose run --rm --no-deps -v "$PWD/.secrets:/keyout:rw" \
+  -e DATA_ENCRYPTION_KEY_FILE=/keyout/data-encryption.key api \
   python -m scripts.manage_encryption init-key
+docker compose restart api mcp
 ```
+
+The containers run as root, so the file is owned by root with mode `0600`; read it
+with `sudo` to back it up.
 
 Back up the master key separately from database dumps with tightly restricted
 access. Restores need both the master key and the database's wrapped-key table.
