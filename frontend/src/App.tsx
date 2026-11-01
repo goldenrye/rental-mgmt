@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { TodayDate } from "./TodayDate";
 import type { FormEvent, ReactNode } from "react";
 import {
   Bill,
@@ -938,6 +939,7 @@ function App() {
           <p className="eyebrow">{t("Rental Management")}</p>
           <h1>{t("Welcome, {{name}}", { name: profileDisplayName })}</h1>
           <p className="muted">{t(user.role === "landlord" ? "Landlord dashboard" : "Tenant account")}</p>
+          <TodayDate />
         </div>
         <div className="header-actions">
         {user.role === "landlord" && (
@@ -1734,7 +1736,7 @@ function App() {
                     {t("Filters")}{activeBillFilters.length > 0 ? ` (${activeBillFilters.length})` : ""}
                   </button>
                   <button className="secondary" onClick={() => setBillFilter(defaultPropertyBillFilters())}>
-                    {t("This Month Unpaid")}
+                    {t("Unpaid Bills")}
                   </button>
                   <button
                     className="secondary"

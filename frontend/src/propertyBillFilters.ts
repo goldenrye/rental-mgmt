@@ -53,7 +53,6 @@ export function defaultPropertyBillFilters(today = new Date()): PropertyBillFilt
   const lastDay = new Date(year, today.getMonth() + 1, 0).getDate();
   return {
     ...emptyPropertyBillFilters,
-    start: `${year}-${month}-01`,
     end: `${year}-${month}-${lastDay}`,
     status: "unpaid",
   };

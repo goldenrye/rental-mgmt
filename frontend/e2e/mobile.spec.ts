@@ -1,6 +1,40 @@
 import { test, expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
+test.describe("today's date in the header", () => {
+  test.use({ timezoneId: "America/Los_Angeles" });
+
+  test("uses local date, changes language, and updates at midnight and on return", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-11-02T07:59:50Z") });
+    await login(page);
+    const date = page.locator(".topbar .today-date time");
+    await expect(date).toHaveAttribute("datetime", "2026-11-01");
+    await expect(date).toHaveText("Today: Sun, Nov 1, 2026");
+    await page.clock.fastForward(11_000);
+    await expect(date).toHaveAttribute("datetime", "2026-11-02");
+    await expect(date).toHaveText("Today: Mon, Nov 2, 2026");
+    await page.getByRole("button", { name: "Open profile menu" }).click();
+    await page.getByLabel("Language", { exact: true }).selectOption("zh-CN");
+    await expect(date).toContainText("今天：");
+    await expect(date).toContainText("2026年11月2日");
+    await page.getByRole("button", { name: "打开个人菜单" }).click();
+    await noOverflow(page);
+    await page.clock.setSystemTime(new Date("2026-11-04T08:00:00Z"));
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(date).toHaveAttribute("datetime", "2026-11-04");
+    await page.clock.setSystemTime(new Date("2026-11-05T08:00:00Z"));
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(date).toHaveAttribute("datetime", "2026-11-05");
+  });
+
+  test("also appears on the admin dashboard", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-11-02T07:00:00Z"));
+    await login(page, true);
+    await expect(page.locator(".topbar .today-date time")).toHaveText("Today: Sun, Nov 1, 2026");
+    await noOverflow(page);
+  });
+});
+
 test("Chinese browser language is detected and manual choice persists without clearing drafts", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, "languages", { value: ["zh-CN", "en-US"] }));
   await page.goto("/#invite=language-test-invitation");
@@ -487,6 +521,51 @@ test("all landlord sections, nested units, pagination and forms remain accessibl
   await page.getByRole("button", { name: "Open profile menu" }).click();
   await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
   await expect(page.getByText("Data Encryption", { exact: false }).first()).toBeVisible();
+  await noOverflow(page);
+});
+
+test("Unpaid Bills includes overdue and current-month bills and excludes paid or later bills", async ({ page }) => {
+  await page.clock.setFixedTime(new Date(2026, 9, 21, 12));
+  await login(page);
+  const base = {
+    landlord_id: 1, property_id: 1, bill_type: "water", amount_due: "120.00",
+    recurrence: "one_time", status: "unpaid", generated_at: null, notes: "",
+  };
+  const bills = [
+    { ...base, id: 1, title: "Overdue last year", due_date: "2025-12-31" },
+    { ...base, id: 2, title: "Overdue last month", due_date: "2026-09-30" },
+    { ...base, id: 3, title: "Due first of month", due_date: "2026-10-01" },
+    { ...base, id: 4, title: "Due last of month", due_date: "2026-10-31" },
+    { ...base, id: 5, title: "Next month unpaid", due_date: "2026-11-01" },
+    { ...base, id: 6, title: "Previously paid", due_date: "2026-09-30", status: "paid" },
+    { ...base, id: 7, title: "This month paid", due_date: "2026-10-21", status: "paid" },
+  ];
+  await page.route("**/api/property-bills", (route) => route.fulfill({ json: bills }));
+  await page.getByRole("heading", { name: "Welcome, Test Owner" }).waitFor();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("button", { name: "Property Bills", exact: true }).click();
+  const table = page.getByRole("table", { name: "Property bills", exact: true });
+  const expectUnpaid = async () => {
+    await expect(table.locator("tbody tr")).toHaveCount(4);
+    for (const bill of bills.slice(0, 4)) await expect(table.getByText(bill.title, { exact: true })).toBeVisible();
+    for (const bill of bills.slice(4)) await expect(table.getByText(bill.title, { exact: true })).toHaveCount(0);
+  };
+  await expectUnpaid();
+  await page.getByRole("button", { name: "Clear bill filters" }).click();
+  await expect(table.locator("tbody tr")).toHaveCount(7);
+  await page.getByRole("button", { name: "Unpaid Bills", exact: true }).click();
+  await expectUnpaid();
+  await page.getByRole("button", { name: /Filters/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Filter Property Bills" });
+  await expect(dialog.getByLabel("Start date (due from)", { exact: true })).toHaveValue("");
+  await expect(dialog.getByLabel("End date (due through)", { exact: true })).toHaveValue("2026-10-31");
+  await expect(dialog.getByLabel("Payment status")).toHaveValue("unpaid");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByLabel("Language", { exact: true }).selectOption("zh-CN");
+  await page.getByRole("button", { name: "打开个人菜单" }).click();
+  await page.getByRole("button", { name: "未付账单", exact: true }).click();
+  await expect(page.getByRole("table", { name: "房产账单", exact: true }).locator("tbody tr")).toHaveCount(4);
   await noOverflow(page);
 });
 

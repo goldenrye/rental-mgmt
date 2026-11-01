@@ -2,6 +2,7 @@
 // Keep interpolation values untouched: they can contain user-entered names.
 export const translations: Record<string, string> = {
   "Language": "语言",
+  "Today: {{date}}": "今天：{{date}}",
   "Rental Management": "租赁管理",
   "Opening Rental Management...": "正在打开租赁管理...",
   "Unable to open secure storage": "无法打开安全存储",
@@ -153,7 +154,7 @@ export const translations: Record<string, string> = {
   "Property bill filters": "房产账单筛选",
   "Edit property bill filters": "编辑房产账单筛选",
   "Filters": "筛选",
-  "This Month Unpaid": "本月未付",
+  "Unpaid Bills": "未付账单",
   "Clear": "清除",
   "Clear bill filters": "清除账单筛选",
   "All property bills": "所有房产账单",

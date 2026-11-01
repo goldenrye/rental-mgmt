@@ -6,6 +6,7 @@ import { LandlordInvites } from "./LandlordInvites";
 import { DataTable } from "./PaginatedEntries";
 import { t } from "./i18n";
 import { LanguageSelector } from "./LanguageSelector";
+import { TodayDate } from "./TodayDate";
 
 const dateTime = (value: string | null) => value ? new Date(value).toLocaleString() : "-";
 
@@ -164,6 +165,7 @@ export function AdminDashboard({ user, onLogout, onUserChange }: {
         <div className="header-greeting">
           <p className="eyebrow">{t("Rental Management / Super Admin")}</p>
           <h1>{t("Landlord Management")}</h1>
+          <TodayDate />
         </div>
         <div className="header-actions">
           <LanguageSelector />

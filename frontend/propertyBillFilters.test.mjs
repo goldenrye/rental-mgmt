@@ -10,30 +10,32 @@ const bills = [
 ];
 const filteredIds = (filters = {}) => filterPropertyBills(bills, { ...emptyPropertyBillFilters, ...filters }).map((bill) => bill.id);
 
-test("default filters show only unpaid bills due in the current local month", () => {
+test("default filters include overdue and current-month unpaid bills, but not paid or later bills", () => {
   const filters = defaultPropertyBillFilters(new Date(2026, 9, 21));
   assert.deepEqual(filters, {
-    ...emptyPropertyBillFilters, start: "2026-10-01", end: "2026-10-31", status: "unpaid",
+    ...emptyPropertyBillFilters, end: "2026-10-31", status: "unpaid",
   });
   const candidates = [
     ...bills,
     { ...bills[0], id: 5, due_date: "2026-09-30" },
     { ...bills[0], id: 6, due_date: "2026-11-01" },
     { ...bills[0], id: 7, due_date: "2026-10-31" },
+    { ...bills[0], id: 8, due_date: "2025-12-31" },
+    { ...bills[0], id: 9, due_date: "2026-09-30", status: "paid" },
   ];
-  assert.deepEqual(filterPropertyBills(candidates, filters).map((bill) => bill.id), [1, 4, 7]);
+  assert.deepEqual(filterPropertyBills(candidates, filters).map((bill) => bill.id), [1, 4, 5, 7, 8]);
   assert.equal(emptyPropertyBillFilters.status, "");
 });
 
 test("default filters handle leap years and year boundaries", () => {
-  for (const [date, start, end] of [
-    [new Date(2024, 1, 15), "2024-02-01", "2024-02-29"],
-    [new Date(2026, 1, 15), "2026-02-01", "2026-02-28"],
-    [new Date(2026, 11, 31), "2026-12-01", "2026-12-31"],
-    [new Date(2027, 0, 1), "2027-01-01", "2027-01-31"],
+  for (const [date, end] of [
+    [new Date(2024, 1, 15), "2024-02-29"],
+    [new Date(2026, 1, 15), "2026-02-28"],
+    [new Date(2026, 11, 31), "2026-12-31"],
+    [new Date(2027, 0, 1), "2027-01-31"],
   ]) {
     assert.deepEqual(defaultPropertyBillFilters(date), {
-      ...emptyPropertyBillFilters, start, end, status: "unpaid",
+      ...emptyPropertyBillFilters, end, status: "unpaid",
     });
   }
 });
