@@ -198,6 +198,9 @@ function App() {
   const [billEdit, setBillEdit] = useState<Pick<PropertyBill, "id" | "title" | "amount_due" | "due_date"> | null>(null);
   const [tenantChargeBillId, setTenantChargeBillId] = useState<number | null>(null);
   const tenantChargeTrigger = useRef<HTMLButtonElement | null>(null);
+  const [markPaidBill, setMarkPaidBill] = useState<PropertyBill | null>(null);
+  const [splitBeforePaid, setSplitBeforePaid] = useState(true);
+  const markPaidAfterSplit = useRef<PropertyBill | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [mcpKeysOpen, setMcpKeysOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -748,7 +751,33 @@ function App() {
     }, "Bill updated. Bills that do not match the active filters are hidden.");
   }
 
+  function openMarkPaidDialog(bill: PropertyBill, trigger: HTMLButtonElement) {
+    tenantChargeTrigger.current = trigger;
+    setSplitBeforePaid(!bill.generated_at);
+    setMarkPaidBill(bill);
+  }
+
+  function closeMarkPaidDialog() {
+    setMarkPaidBill(null);
+    tenantChargeTrigger.current?.focus();
+  }
+
+  async function confirmMarkPaid() {
+    if (!markPaidBill || loading) return;
+    const bill = markPaidBill;
+    setMarkPaidBill(null);
+    if (!bill.generated_at && splitBeforePaid) {
+      // Split first; the bill is marked paid only after tenant bills are generated.
+      markPaidAfterSplit.current = bill;
+      setTenantChargeBillId(bill.id);
+      return;
+    }
+    await updatePropertyBillStatus(bill, "paid");
+    tenantChargeTrigger.current?.focus();
+  }
+
   function closeTenantChargeDialog() {
+    markPaidAfterSplit.current = null;
     setTenantChargeBillId(null);
     tenantChargeTrigger.current?.focus();
   }
@@ -760,7 +789,14 @@ function App() {
     ));
     setError("");
     setMessage(t(generatedBills.length === 1 ? "{{count}} tenant charge generated. View them in Rental & Payments." : "{{count}} tenant charges generated. View them in Rental & Payments.", { count: generatedBills.length }));
+    const billToMarkPaid = markPaidAfterSplit.current;
     closeTenantChargeDialog();
+    if (billToMarkPaid) {
+      void withStatus(async () => {
+        const updatedBill = await api.updatePropertyBill(billToMarkPaid.id, { status: "paid" });
+        setPropertyBills((current) => current.map((item) => (item.id === billToMarkPaid.id ? updatedBill : item)));
+      }, t(generatedBills.length === 1 ? "{{count}} tenant charge generated and bill marked as paid." : "{{count}} tenant charges generated and bill marked as paid.", { count: generatedBills.length }));
+    }
   }
 
   async function recordPayment(billId: number) {
@@ -1755,7 +1791,12 @@ function App() {
                             disabled={loading}
                             title={t(bill.status === "paid" ? "Mark unpaid" : "Mark paid")}
                             aria-label={t("Mark property bill \"{{title}}\" {{status}}", { title: bill.title, status: t(bill.status === "paid" ? "unpaid" : "paid") })}
-                            onClick={() => updatePropertyBillStatus(bill, bill.status === "paid" ? "unpaid" : "paid")}
+                            aria-haspopup={bill.status === "paid" ? undefined : "dialog"}
+                            onClick={(event) =>
+                              bill.status === "paid"
+                                ? updatePropertyBillStatus(bill, "unpaid")
+                                : openMarkPaidDialog(bill, event.currentTarget)
+                            }
                           >
                             <BillActionIcon name={bill.status === "paid" ? "unpaid" : "paid"} />
                           </button>
@@ -1813,6 +1854,56 @@ function App() {
                     setMessage(t("{{count}} property bills generated. Active filters may hide new bills.", { count: created.length }));
                   }}
                 />
+              )}
+
+              {markPaidBill && (
+                <div
+                  className="modal-backdrop"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="mark-paid-title"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" && !loading) {
+                      event.stopPropagation();
+                      closeMarkPaidDialog();
+                    }
+                  }}
+                >
+                  <form
+                    className="card form modal-card"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void confirmMarkPaid();
+                    }}
+                  >
+                    <h2 id="mark-paid-title">{t("Mark Bill Paid")}</h2>
+                    <p><strong>{markPaidBill.title}</strong> / {propertyNameById.get(markPaidBill.property_id) ?? t("Property #{{id}}", { id: markPaidBill.property_id })}</p>
+                    <p>{t("Total: ${{amount}}", { amount: markPaidBill.amount_due })} | {t("Due date: {{date}}", { date: markPaidBill.due_date })}</p>
+                    {markPaidBill.generated_at ? (
+                      <p className="muted">{t("Tenant bills have already been generated for this bill.")}</p>
+                    ) : (
+                      <>
+                        <p className="alert error" role="alert">{t("Tenant bills have not been generated for this bill yet.")}</p>
+                        <label className="inline-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={splitBeforePaid}
+                            onChange={(event) => setSplitBeforePaid(event.target.checked)}
+                          />
+                          {t("Split into tenant bills first, then mark as paid")}
+                        </label>
+                      </>
+                    )}
+                    <div className="modal-actions">
+                      <button type="button" className="secondary" disabled={loading} onClick={closeMarkPaidDialog}>
+                        {t("Cancel")}
+                      </button>
+                      <button type="submit" className="primary" autoFocus disabled={loading}>
+                        {t(!markPaidBill.generated_at && splitBeforePaid ? "Next: Split to Tenants" : "Mark paid")}
+                      </button>
+                    </div>
+                  </form>
+                </div>
               )}
 
               {tenantChargeBillId !== null && (
