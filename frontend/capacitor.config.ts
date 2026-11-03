@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 import { KeyboardResize } from "@capacitor/keyboard";
 
 const config: CapacitorConfig = {
-  appId: "com.rentalmgmt.app",
+  appId: "com.jpi.rental-mgmt",
   appName: "Rental Management",
   webDir: "dist-ios",
   loggingBehavior: "none",
