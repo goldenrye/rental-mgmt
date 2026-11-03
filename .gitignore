@@ -6,6 +6,7 @@ __pycache__/
 rental_mgmt.db*
 data/
 .vscode/
+.DS_Store
 
 frontend/.env
 frontend/.env.*.local
