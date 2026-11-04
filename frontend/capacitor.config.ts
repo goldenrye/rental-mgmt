@@ -11,6 +11,8 @@ const config: CapacitorConfig = {
   ios: { contentInset: "never", preferredContentMode: "mobile", webContentsDebuggingEnabled: false },
   plugins: {
     Keyboard: { resize: KeyboardResize.Native },
+    // Show reminders as banners even while the app is open.
+    PushNotifications: { presentationOptions: ["alert", "sound"] },
   },
 };
 

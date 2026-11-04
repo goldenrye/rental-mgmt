@@ -19,6 +19,9 @@ database as the website. No database migration is needed for this client.
 - Device-only Keychain token storage, scoped to the configured API URL.
   Native tokens are not persisted in browser localStorage or iCloud Keychain.
 - A privacy cover for the app switcher's background snapshot.
+- Opt-in lease-ending and bill-due reminders through Apple Push Notification
+  service, turned on in **Edit Profile > Notifications**. Banners show while the
+  app is open too, and contain only counts and dates.
 
 The tenant portal retains the browser client's existing limited functionality;
 this does not add a new tenant dashboard. This is an online client, not an
@@ -107,10 +110,32 @@ In Xcode:
    requirements there. No signing identity or credentials are stored in this repo.
 
 After every frontend change, run `npm run ios:sync` before building in Xcode.
+It also registers the `@capacitor/push-notifications` plugin in the generated
+`capacitor.config.json`; without a sync the notification button fails.
 The custom `SecureSession.swift` plugin is registered by
 `RentalBridgeViewController`, used by both the scene delegate and storyboard.
 Do not replace it with the default bridge controller: native sign-in intentionally
 fails if secure storage is unavailable.
+
+## Notifications
+
+The app target has the **Push Notifications** capability (`App/App.entitlements`,
+`aps-environment`). Xcode signs debug builds for the APNs sandbox and switches to
+production when you archive for TestFlight or the App Store. With automatic
+signing, enable Push Notifications on the App ID once, under Signing &
+Capabilities or in the Apple Developer portal.
+
+The API needs an APNs key. See "iPhone app (APNs) setup" in the main README.
+Without one, the settings panel says notifications are not configured on the
+server. Remote notifications do not arrive in the iOS Simulator from this server.
+Use a physical iPhone and check that:
+
+- **Turn On for This Device** shows the iOS permission prompt once, and
+  **Send Test Notification** arrives with the app in the foreground and background.
+- Disabling notifications in iOS Settings, then opening Edit Profile, removes the
+  device from the server.
+- Signing out removes the device. Signing in as another landlord and turning
+  notifications on moves the device to that landlord.
 
 ## Invitations
 

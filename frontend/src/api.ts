@@ -14,6 +14,7 @@ export type GoogleCalendarStatus = {
 
 export type WebPushStatus = {
   available: boolean;
+  native_available: boolean;
   public_key: string | null;
   devices: number;
   lease_expiry: boolean;
@@ -284,6 +285,10 @@ export const api = {
     request<WebPushStatus>("/me/web-push/subscriptions", { method: "POST", body: JSON.stringify(subscription) }),
   removeWebPushSubscription: (endpoint: string) =>
     request<void>("/me/web-push/subscriptions", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
+  addNativePushDevice: (token: string) =>
+    request<WebPushStatus>("/me/native-push/devices", { method: "POST", body: JSON.stringify({ token, platform: "ios" }) }),
+  removeNativePushDevice: (token: string) =>
+    request<void>("/me/native-push/devices", { method: "DELETE", body: JSON.stringify({ token }) }),
   testWebPush: () => request<WebPushStatus>("/me/web-push/test", { method: "POST" }),
   listMcpApiKeys: () => request<McpApiKey[]>("/me/mcp-api-keys"),
   createMcpApiKey: (payload: { name: string; current_password: string; expires_in_days: number | null }) =>

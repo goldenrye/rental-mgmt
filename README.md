@@ -42,7 +42,7 @@ database backups.
 - English and Simplified Chinese interface, with a remembered language choice
 - Self-service password reset by emailed link, when the server has SMTP configured
 - Optional Google Calendar export of newly generated rent bills, off by default per landlord
-- Optional browser push reminders before leases end and bills are due, turned on per device
+- Optional push reminders (browser and iPhone app) before leases end and bills are due, turned on per device
 
 **Super admin**
 
@@ -373,6 +373,8 @@ Backend (`api` and `mcp`; read from the environment or the project-root `.env`):
 | `TRUST_PROXY_HEADERS` | `false` | Use nginx's `X-Real-IP` as the client IP. Enable only when the API is reachable solely through nginx. |
 | `WEB_PUSH_VAPID_PRIVATE_KEY` | — | Enables [push notifications](#push-notifications). Generate with `python -m scripts.generate_vapid_key`; `api` only. |
 | `WEB_PUSH_CONTACT` | — | `mailto:` or `https:` contact sent to browser push services; required with the key |
+| `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_TOPIC` | — | Enable [iPhone app notifications](#iphone-app-apns-setup) together with an APNs key; `APNS_TOPIC` is the bundle ID |
+| `APNS_AUTH_KEY_FILE` / `APNS_AUTH_KEY` | — | Path to the APNs `.p8` key (e.g. `/run/secrets/apns-auth-key.p8`), or its PEM inline |
 | `SMTP_HOST` / `SMTP_PORT` | — / `587` | Mail server for [password reset](#password-reset) emails; `api` only. Port 465 uses implicit TLS. |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | — | SMTP login, if the server requires one |
 | `SMTP_STARTTLS` | `true` | Upgrade to TLS on ports other than 465 |
@@ -852,8 +854,8 @@ Calendar endpoints (landlord authentication required except the OAuth callback):
 
 ## Push notifications
 
-In **Edit Profile > Notifications**, each landlord can turn on browser push
-reminders for the current device and choose which reminders to receive:
+In **Edit Profile > Notifications**, each landlord can turn on push reminders
+for the current browser or iPhone app and choose which reminders to receive:
 
 - **Lease ending soon**: 30 days before a lease's end date.
 - **Bills due soon**: 3 days before unpaid property bills and open or partially
@@ -873,7 +875,8 @@ Deactivated landlords receive nothing.
 
 Browser support: Chrome, Edge and Firefox on desktop and Android, and Safari on
 macOS. On iPhone and iPad (iOS 16.4+), the site must first be added to the Home Screen
-and opened from there. The packaged iPhone client does not receive notifications.
+and opened from there. The packaged iPhone app uses Apple Push Notification service
+(APNs) directly; see [iPhone app (APNs) setup](#iphone-app-apns-setup).
 The service worker is registered only in production builds, so use `npm run build`
 and `npm run preview` (or the Compose stack) to test locally.
 
@@ -897,8 +900,37 @@ have to turn notifications on again on each device. The API sends only to the
 push services of Chrome/Android (FCM), Firefox, Safari/Apple and Edge (WNS). It
 rejects other endpoints so that it cannot be used to make requests to arbitrary URLs.
 
+### iPhone app (APNs) setup
+
+Web push and APNs are configured independently; either one alone is enough.
+
+1. In Apple Developer > Certificates, IDs & Profiles > Identifiers, enable **Push
+   Notifications** for the app's bundle identifier.
+2. Under **Keys**, create a key with **Apple Push Notifications service (APNs)**
+   enabled and download `AuthKey_<KEY_ID>.p8`. Apple lets you download it only once.
+3. Save it as `.secrets/apns-auth-key.p8` (mounted read-only at `/run/secrets`),
+   add the following to `.env`, and restart the API:
+
+   ```dotenv
+   APNS_TEAM_ID=YOUR_TEAM_ID
+   APNS_KEY_ID=YOUR_KEY_ID
+   APNS_TOPIC=com.jpi.rental-mgmt
+   APNS_AUTH_KEY_FILE=/run/secrets/apns-auth-key.p8
+   ```
+
+   `APNS_AUTH_KEY` accepts the PEM inline instead, with `\n` for line breaks.
+   `APNS_TOPIC` must equal the app's bundle identifier.
+
+The same key serves Xcode debug builds (APNs sandbox) and TestFlight/App Store
+builds (production). The API tries production first, falls back to sandbox when
+APNs reports `BadDeviceToken`, and remembers which one worked for each device.
+Device tokens are encrypted with the data encryption key, like browser
+subscriptions. Tokens that APNs reports as unregistered are deleted. Each device
+counts toward the same limit of 10 devices per landlord.
+
 Endpoints (landlord authentication required): `GET/PUT /me/web-push`,
-`POST/DELETE /me/web-push/subscriptions`, and `POST /me/web-push/test`.
+`POST/DELETE /me/web-push/subscriptions`, `POST/DELETE /me/native-push/devices`,
+and `POST /me/web-push/test`, which sends to every device.
 
 ## API
 

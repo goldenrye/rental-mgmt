@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { WebPushStatus } from "./api";
 import { isNative } from "./platform";
+import { disableNativePush, enableNativePush, nativePushEnabledHere, nativePushPermission, syncNativePush } from "./nativePush";
 import { t } from "./i18n";
 
 const supported = !isNative && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -27,6 +28,10 @@ async function currentSubscription() {
 // Called on sign-out so a shared browser stops receiving this landlord's reminders.
 export async function removeThisDeviceFromPush() {
   try {
+    if (isNative) {
+      if (nativePushEnabledHere()) await disableNativePush();
+      return;
+    }
     const { subscription } = await currentSubscription();
     if (!subscription) return;
     await api.removeWebPushSubscription(subscription.endpoint).catch(() => {});
@@ -51,6 +56,23 @@ export function WebPushSettings({ loading, onBusyChange }: {
     let active = true;
     (async () => {
       const value = await api.webPushStatus();
+      if (isNative) {
+        if (!active) return;
+        setStatus(value);
+        if (!value.native_available || !nativePushEnabledHere()) return;
+        if (await nativePushPermission() !== "granted") {
+          // Turned off in iOS Settings: stop sending to a token that cannot show anything.
+          await disableNativePush().catch(() => {});
+          if (active) setStatus(await api.webPushStatus());
+          return;
+        }
+        const synced = await syncNativePush();
+        if (active) {
+          setStatus(synced);
+          setThisDevice(true);
+        }
+        return;
+      }
       const { registration, subscription } = await currentSubscription();
       if (!active) return;
       setWorkerReady(Boolean(registration));
@@ -86,6 +108,12 @@ export function WebPushSettings({ loading, onBusyChange }: {
 
   function enable() {
     void run(async () => {
+      if (isNative) {
+        setStatus(await enableNativePush());
+        setThisDevice(true);
+        setMessage("Notifications are on for this device.");
+        return;
+      }
       const { registration, subscription: existing } = await currentSubscription();
       if (!registration || !status?.public_key) throw new Error("Notifications are unavailable in this browser.");
       if (await Notification.requestPermission() !== "granted") {
@@ -106,6 +134,7 @@ export function WebPushSettings({ loading, onBusyChange }: {
   function disable() {
     void run(async () => {
       const { subscription } = await currentSubscription();
+      if (isNative) await disableNativePush();
       if (subscription) {
         await api.removeWebPushSubscription(subscription.endpoint);
         await subscription.unsubscribe();
@@ -127,7 +156,9 @@ export function WebPushSettings({ loading, onBusyChange }: {
   }
 
   let unavailable = "";
-  if (isNative) unavailable = "Notifications are not available in the iPhone app yet. Add the rental website to your Home Screen to receive them.";
+  if (isNative) {
+    if (status && !status.native_available) unavailable = "iPhone app notifications are not configured on this server. Ask your administrator to set up Apple push notifications.";
+  }
   else if (!supported && iosBrowser) unavailable = "On iPhone and iPad, add this site to your Home Screen (Share > Add to Home Screen), then open it from there to turn on notifications.";
   else if (!supported) unavailable = "This browser does not support push notifications.";
   else if (status && !status.available) unavailable = "Notifications are not configured on this server. Ask your administrator to set a web push key.";

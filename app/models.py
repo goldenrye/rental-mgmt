@@ -211,6 +211,21 @@ class WebPushSubscription(Base):
     last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
+class NativePushDevice(Base):
+    """One iPhone app install's APNs device token. The token is sealed; only a hash is indexed."""
+
+    __tablename__ = "native_push_devices"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    landlord_id: Mapped[int] = mapped_column(ForeignKey("landlord_profiles.id"), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    token: Mapped[str] = mapped_column(Text, nullable=False)
+    # "production" or "sandbox"; learned from APNs because the same JS bundle ships in both builds.
+    environment: Mapped[Optional[str]] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
 class WebPushPreference(Base):
     __tablename__ = "web_push_preferences"
 

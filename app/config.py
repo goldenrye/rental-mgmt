@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     web_push_vapid_private_key: SecretStr = SecretStr("")
     # mailto: or https: contact sent to push services in the VAPID "sub" claim.
     web_push_contact: str = ""
+    # iPhone app reminders through Apple Push Notification service (token-based .p8 auth key).
+    # All of team ID, key ID, topic and a key (inline PEM or file path) are required.
+    apns_team_id: str = ""
+    apns_key_id: str = ""
+    # Inline .p8 PEM; literal "\n" sequences are accepted for single-line env values.
+    apns_auth_key: SecretStr = SecretStr("")
+    apns_auth_key_file: str = ""
+    # The iOS bundle identifier, e.g. com.jpi.rental-mgmt.
+    apns_topic: str = ""
     # Password reset emails. Empty SMTP_HOST or SMTP_FROM keeps "Forgot password" unavailable.
     smtp_host: str = ""
     # 465 uses implicit TLS; any other port uses STARTTLS unless smtp_starttls is false.

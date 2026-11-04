@@ -1,4 +1,4 @@
-"""Opt-in browser push reminders for lease ends and bill due dates.
+"""Opt-in push reminders for lease ends and bill due dates, to browsers and the iPhone app.
 
 Payloads carry only counts and dates: notifications can appear on a locked screen,
 so tenant names, property names and amounts stay in the app.
@@ -13,8 +13,10 @@ import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlsplit
 
+import httpx
 import requests
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi import APIRouter, HTTPException, Response
@@ -23,12 +25,13 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from pywebpush import WebPushException, webpush
 from sqlalchemy import delete, func, select
 
+from app import apns
 from app.config import get_settings
 from app.database import SessionLocal
 from app.deps import DbSession, Landlord
 from app.encryption import EncryptionError, master_key, seal, unseal
 from app.models import (
-    BillStatus, LandlordProfile, Lease, PropertyBill, PropertyBillStatus, RentalBill,
+    BillStatus, LandlordProfile, Lease, NativePushDevice, PropertyBill, PropertyBillStatus, RentalBill,
     WebPushNotice, WebPushPreference, WebPushSubscription,
 )
 
@@ -68,9 +71,13 @@ def vapid():
     return vapid_for(get_settings().web_push_vapid_private_key.get_secret_value())
 
 
-def configured():
+def web_configured():
     contact = get_settings().web_push_contact
     return bool(vapid()[0] and (contact.startswith("mailto:") or contact.startswith("https://")))
+
+
+def configured():
+    return web_configured() or apns.configured()
 
 
 def allowed_endpoint(value):
@@ -97,6 +104,19 @@ def unseal_subscription(row):
     return json.loads(unseal(master_key(), row.subscription, f"web-push:{row.landlord_id}:{row.id}"))
 
 
+def seal_device_token(landlord_id, device_id, token):
+    return seal(master_key(), token.encode(), f"native-push:{landlord_id}:{device_id}")
+
+
+def unseal_device_token(row):
+    return unseal(master_key(), row.token, f"native-push:{row.landlord_id}:{row.id}").decode()
+
+
+def device_count(db, landlord_id):
+    return sum(db.scalar(select(func.count()).select_from(model).where(model.landlord_id == landlord_id))
+               for model in (WebPushSubscription, NativePushDevice))
+
+
 def preference(db, landlord_id):
     return db.get(WebPushPreference, landlord_id) or WebPushPreference(
         landlord_id=landlord_id, lease_expiry=True, bill_due=True,
@@ -105,13 +125,11 @@ def preference(db, landlord_id):
 
 def status_payload(db, landlord_id):
     prefs = preference(db, landlord_id)
-    devices = db.scalar(select(func.count()).select_from(WebPushSubscription).where(
-        WebPushSubscription.landlord_id == landlord_id,
-    ))
     return {
-        "available": configured(),
-        "public_key": vapid()[1] if configured() else None,
-        "devices": devices,
+        "available": web_configured(),
+        "native_available": apns.configured(),
+        "public_key": vapid()[1] if web_configured() else None,
+        "devices": device_count(db, landlord_id),
         "lease_expiry": prefs.lease_expiry,
         "bill_due": prefs.bill_due,
         "lease_notice_days": LEASE_NOTICE_DAYS,
@@ -142,8 +160,19 @@ class SubscriptionRef(BaseModel):
     endpoint: str = Field(max_length=2048)
 
 
-def require_configured():
-    if not configured():
+class NativeDeviceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(max_length=200)
+    platform: Literal["ios"] = "ios"
+
+
+class NativeDeviceRef(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    token: str = Field(max_length=200)
+
+
+def require_configured(available=configured):
+    if not available():
         raise HTTPException(503, "Push notifications are not configured on this server.")
 
 
@@ -167,7 +196,7 @@ def push_preferences(payload: Preferences, db: DbSession, landlord: Landlord, re
 @router.post("/me/web-push/subscriptions")
 def push_subscribe(payload: SubscriptionIn, db: DbSession, landlord: Landlord, response: Response):
     response.headers["Cache-Control"] = "no-store"
-    require_configured()
+    require_configured(web_configured)
     if not allowed_endpoint(payload.endpoint):
         raise HTTPException(422, "This browser's push service is not supported.")
     if len(b64url_decode(payload.keys.p256dh)) != 65 or len(b64url_decode(payload.keys.auth)) != 16:
@@ -176,10 +205,7 @@ def push_subscribe(payload: SubscriptionIn, db: DbSession, landlord: Landlord, r
     # One browser profile has one endpoint; signing in as another landlord moves it.
     row = db.scalar(select(WebPushSubscription).where(WebPushSubscription.endpoint_hash == digest(payload.endpoint)))
     if row is None:
-        count = db.scalar(select(func.count()).select_from(WebPushSubscription).where(
-            WebPushSubscription.landlord_id == landlord.id,
-        ))
-        if count >= MAX_DEVICES:
+        if device_count(db, landlord.id) >= MAX_DEVICES:
             raise HTTPException(409, f"Turn off notifications on another device first (limit {MAX_DEVICES}).")
         row = WebPushSubscription(id=uuid.uuid4().hex, endpoint_hash=digest(payload.endpoint), created_at=now())
         db.add(row)
@@ -197,6 +223,41 @@ def push_unsubscribe(payload: SubscriptionRef, db: DbSession, landlord: Landlord
     db.execute(delete(WebPushSubscription).where(
         WebPushSubscription.landlord_id == landlord.id,
         WebPushSubscription.endpoint_hash == digest(payload.endpoint),
+    ))
+    db.commit()
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/me/native-push/devices")
+def native_register(payload: NativeDeviceIn, db: DbSession, landlord: Landlord, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    require_configured(apns.configured)
+    token = payload.token.strip().lower()
+    if not apns.valid_token(token):
+        raise HTTPException(422, "Invalid device token.")
+    # One app install has one token; signing in as another landlord moves it.
+    row = db.scalar(select(NativePushDevice).where(NativePushDevice.token_hash == digest(token)))
+    if row is None:
+        if device_count(db, landlord.id) >= MAX_DEVICES:
+            raise HTTPException(409, f"Turn off notifications on another device first (limit {MAX_DEVICES}).")
+        row = NativePushDevice(id=uuid.uuid4().hex, token_hash=digest(token), created_at=now())
+        db.add(row)
+    elif row.landlord_id != landlord.id:
+        row.environment = None
+    row.landlord_id = landlord.id
+    try:
+        row.token = seal_device_token(landlord.id, row.id, token)
+    except EncryptionError:
+        raise HTTPException(503, "Configure the server encryption key before enabling notifications.") from None
+    db.commit()
+    return status_payload(db, landlord.id)
+
+
+@router.delete("/me/native-push/devices", status_code=204)
+def native_unregister(payload: NativeDeviceRef, db: DbSession, landlord: Landlord):
+    db.execute(delete(NativePushDevice).where(
+        NativePushDevice.landlord_id == landlord.id,
+        NativePushDevice.token_hash == digest(payload.token.strip().lower()),
     ))
     db.commit()
     return Response(status_code=204, headers={"Cache-Control": "no-store"})
@@ -227,9 +288,50 @@ def deliver(info, message):
         session.close()
 
 
+def deliver_native(db, row, message):
+    """Returns True when APNs accepted the message for this device."""
+    token = unseal_device_token(row)
+    # Xcode debug builds get sandbox tokens and archived builds production ones; APNs says which.
+    environments = [row.environment] if row.environment else ["production", "sandbox"]
+    for environment in environments:
+        try:
+            apns.send(token, environment, message)
+        except apns.ApnsError as exc:
+            if exc.wrong_environment and environment != environments[-1]:
+                continue
+            if exc.gone or exc.wrong_environment:
+                db.delete(row)
+            else:
+                logger.error("APNs push failed: device=%s status=%s reason=%s", row.id, exc.status, exc.reason)
+            return False
+        row.environment = environment
+        return True
+    return False
+
+
+def send_to_native(db, landlord_id, message):
+    delivered = False
+    rows = db.scalars(select(NativePushDevice).where(NativePushDevice.landlord_id == landlord_id))
+    for row in list(rows):
+        try:
+            if not deliver_native(db, row, message):
+                continue
+        except EncryptionError:
+            logger.error("Native push device could not be decrypted: device=%s", row.id)
+            continue
+        except httpx.HTTPError as exc:
+            logger.error("APNs push failed: device=%s error=%s", row.id, type(exc).__name__)
+            continue
+        row.last_success_at = now()
+        delivered = True
+    return delivered
+
+
 def send_to_landlord(db, landlord_id, message):
     """Returns True when at least one device accepted the message."""
-    delivered = False
+    delivered = send_to_native(db, landlord_id, message) if apns.configured() else False
+    if not web_configured():
+        return delivered
     rows = db.scalars(select(WebPushSubscription).where(WebPushSubscription.landlord_id == landlord_id))
     for row in list(rows):
         try:
@@ -338,8 +440,9 @@ def reconcile_push_notifications(session_factory=SessionLocal, today=None):
     with session_factory() as db:
         db.execute(delete(WebPushNotice).where(WebPushNotice.due_date < today - timedelta(days=30)))
         db.commit()
-        landlord_ids = list(db.scalars(select(WebPushSubscription.landlord_id).distinct()))
-    for landlord_id in landlord_ids:
+        landlord_ids = set(db.scalars(select(WebPushSubscription.landlord_id).distinct()))
+        landlord_ids |= set(db.scalars(select(NativePushDevice.landlord_id).distinct()))
+    for landlord_id in sorted(landlord_ids):
         try:
             with session_factory() as db:
                 notify_landlord(db, landlord_id, today)
