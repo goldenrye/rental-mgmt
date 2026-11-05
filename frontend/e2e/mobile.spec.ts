@@ -507,6 +507,9 @@ test("action buttons share styles across pages and retain focus and touch target
   expect(await actionStyle(page.getByRole("button", { name: "Delete bill #1", exact: true }))).toEqual(danger);
   await page.getByRole("button", { name: "Record payment for bill #1", exact: true }).click();
   const save = page.getByRole("dialog").getByRole("button", { name: "Record Payment", exact: true });
+  await expect(page.getByRole("dialog").getByLabel("Payment amount ($)")).toHaveValue("1000.00");
+  await expect(save).toBeEnabled();
+  await page.getByRole("dialog").getByLabel("Payment amount ($)").fill("");
   await expect(save).toBeDisabled();
   expect(await save.evaluate((el) => getComputedStyle(el).opacity)).toBe("0.5");
   expect(await actionStyle(save)).toEqual(primary);
@@ -604,6 +607,53 @@ test("Unpaid Bills includes overdue and current-month bills and excludes paid or
   await noOverflow(page);
 });
 
+test("payment defaults to the outstanding balance and refreshes after a partial payment", async ({ page }) => {
+  await login(page);
+  let bill = {
+    id: 1, landlord_id: 1, lease_id: 1, tenant_id: 1, tenant_name: "Test Tenant",
+    is_tenant_charge: false, title: "Monthly rent", bill_type: "rent",
+    bill_year: 2026, bill_month: 11, due_date: "2026-11-15",
+    amount_due: "1000.00", amount_paid: "249.75", balance: "750.25", status: "partial",
+  };
+  const payments: unknown[] = [];
+  await page.route("**/api/bills", (route) => route.fulfill({ json: [bill] }));
+  await page.route("**/api/bills/1/payments", (route) => {
+    payments.push(route.request().postDataJSON());
+    bill = payments.length === 1
+      ? { ...bill, amount_paid: "374.85", balance: "625.15" }
+      : { ...bill, amount_paid: "1000.00", balance: "0.00", status: "paid" };
+    return route.fulfill({ json: {} });
+  });
+  await page.getByRole("heading", { name: "Welcome, Test Owner" }).waitFor();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("button", { name: "Rental & Payments", exact: true }).click();
+  const table = page.getByRole("table", { name: "Rental records", exact: true });
+  await expect(table.getByText("$750.25", { exact: true })).toBeVisible();
+  const pay = page.getByRole("button", { name: "Record payment for bill #1", exact: true });
+  await pay.click();
+  const dialog = page.getByRole("dialog", { name: "Record Payment", exact: true });
+  const amount = dialog.getByLabel("Payment amount ($)");
+  await expect(amount).toHaveValue("750.25");
+  await expect(amount).toHaveAttribute("max", "750.25");
+  await amount.fill("125.10");
+  await dialog.getByLabel("Note (optional)").fill("Partial rent");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await pay.click();
+  await expect(amount).toHaveValue("125.10");
+  await expect(dialog.getByLabel("Note (optional)")).toHaveValue("Partial rent");
+  await dialog.getByRole("button", { name: "Record Payment", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(payments).toEqual([{ amount: "125.10", note: "Partial rent" }]);
+  await expect(table.getByText("$625.15", { exact: true })).toBeVisible();
+  await pay.click();
+  await expect(amount).toHaveValue("625.15");
+  await expect(dialog.getByLabel("Note (optional)")).toHaveValue("");
+  await dialog.getByRole("button", { name: "Record Payment", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(payments).toEqual([{ amount: "125.10", note: "Partial rent" }, { amount: "625.15" }]);
+  await expect(pay).toHaveCount(0);
+});
+
 test("bill previews and payment confirmation retain their request contracts", async ({ page }) => {
   await login(page);
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
@@ -633,6 +683,7 @@ test("bill previews and payment confirmation retain their request contracts", as
   await navigation.getByRole("button", { name: "Rental & Payments", exact: true }).click();
   await page.getByRole("button", { name: "Record payment for bill #1", exact: true }).click();
   dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("Payment amount ($)")).toHaveValue("1000.00");
   await dialog.getByLabel("Payment amount ($)").fill("50");
   await dialog.getByLabel("Note (optional)").fill("Phone payment");
   await noOverflow(page);

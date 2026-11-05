@@ -812,7 +812,11 @@ function App() {
         note: payment.note || undefined,
       });
       setSelectedPaymentBillId(null);
-      setPaymentByBill((current) => ({ ...current, [billId]: { amount: "", paid_at: "", note: "" } }));
+      setPaymentByBill((current) => {
+        const next = { ...current };
+        delete next[billId];
+        return next;
+      });
       const [nextBills, nextPayments] = await Promise.all([api.listBills(), api.listPayments()]);
       setBills(nextBills);
       setPayments(nextPayments);
@@ -2198,6 +2202,10 @@ function App() {
                             aria-label={t("Record payment for bill #{{id}}", { id: bill.id })}
                             onClick={() => {
                               setError("");
+                              setPaymentByBill((current) => ({
+                                ...current,
+                                [bill.id]: current[bill.id] ?? { amount: bill.balance, paid_at: "", note: "" },
+                              }));
                               setSelectedPaymentBillId(bill.id);
                             }}
                           >
