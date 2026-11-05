@@ -298,7 +298,10 @@ function App() {
     [leaseForm.tenants, tenants],
   );
   const visibleBills = useMemo(
-    () => sortBillsByDueDate(bills.filter((bill) => showHistoricPaidBills || bill.status !== "paid")),
+    () => sortBillsByDueDate(
+      bills.filter((bill) => showHistoricPaidBills || bill.status !== "paid"),
+      showHistoricPaidBills ? "desc" : "asc",
+    ),
     [bills, showHistoricPaidBills],
   );
   const hiddenPaidBillCount = bills.length - visibleBills.length;

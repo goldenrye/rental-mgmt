@@ -234,6 +234,41 @@ async function actionStyle(button: Locator) {
   });
 }
 
+test("historic rentals show all statuses latest first across pages and reset when toggled", async ({ page }) => {
+  await login(page);
+  const bills = Array.from({ length: 13 }, (_, index) => {
+    const month = index % 12 + 1;
+    const year = 2025 + Math.floor(index / 12);
+    const status = index === 0 || index === 12 ? "open" : index === 7 ? "partial" : "paid";
+    const paid = status === "paid" ? "1000.00" : status === "partial" ? "500.00" : "0.00";
+    return {
+      id: index + 1, landlord_id: 1, lease_id: 1, tenant_id: 1, tenant_name: "Test Tenant",
+      is_tenant_charge: false, title: `Rent ${year}-${month}`, bill_type: "rent",
+      bill_year: year, bill_month: month, due_date: `${year}-${String(month).padStart(2, "0")}-15`,
+      amount_due: "1000.00", amount_paid: paid, balance: (1000 - Number(paid)).toFixed(2), status,
+    };
+  }).reverse();
+  await page.route("**/api/bills", (route) => route.fulfill({ json: bills }));
+  await page.getByRole("heading", { name: "Welcome, Test Owner" }).waitFor();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("button", { name: "Rental & Payments", exact: true }).click();
+  const table = page.getByRole("table", { name: "Rental records", exact: true });
+  const ids = table.locator("tbody > tr > td:first-child");
+  const historic = page.getByLabel("Show historic paid rental", { exact: true });
+  await expect(historic).not.toBeChecked();
+  await expect(ids).toHaveText(["#1", "#8", "#13"]);
+  await historic.check();
+  await expect(ids).toHaveText(["#13", "#12", "#11", "#10", "#9", "#8", "#7", "#6", "#5", "#4"]);
+  await page.getByRole("button", { name: "Next page of Rental records", exact: true }).click();
+  await expect(ids).toHaveText(["#3", "#2", "#1"]);
+  await historic.uncheck();
+  await expect(ids).toHaveText(["#1", "#8", "#13"]);
+  await expect(page.getByRole("navigation", { name: "Rental records pagination" })).toHaveCount(0);
+  await historic.check();
+  await expect(ids.first()).toHaveText("#13");
+  await noOverflow(page);
+});
+
 test("compact mobile spacing preserves readable fields and touch targets", async ({ page, isMobile }) => {
   test.skip(!isMobile, "Mobile density checks");
   await login(page);
