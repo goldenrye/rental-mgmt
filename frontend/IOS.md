@@ -19,6 +19,8 @@ database as the website. No database migration is needed for this client.
 - Device-only Keychain token storage, scoped to the configured API URL.
   Native tokens are not persisted in browser localStorage or iCloud Keychain.
 - A privacy cover for the app switcher's background snapshot.
+- Optional Face ID / Touch ID protection on launch and return from the background,
+  with device-passcode fallback.
 - Opt-in lease-ending and bill-due reminders through Apple Push Notification
   service, turned on in **Edit Profile > Notifications**. Banners show while the
   app is open too, and contain only counts and dates.
@@ -117,6 +119,38 @@ The custom `SecureSession.swift` plugin is registered by
 Do not replace it with the default bridge controller: native sign-in intentionally
 fails if secure storage is unavailable.
 
+## Face ID And Touch ID
+
+Sign in, then open **Edit Profile > Biometric Unlock** and turn on
+**Require Face ID or Touch ID on this device**. Super-admins have the same
+control on their dashboard. Protection is off by default and applies only to
+this device and configured API, not other devices or browser sessions.
+
+Set up Face ID or Touch ID in iPhone Settings first. Enabling or disabling
+protection requires device authentication. Once enabled:
+
+- Cold launch authenticates before loading the saved session from Keychain.
+- Returning from the background shows an opaque native lock screen until
+  authentication succeeds. Canceling keeps the app locked; tap **Unlock** to retry.
+- On canceled cold-start authentication, the secure-storage screen offers
+  **Try Again**, without loading the dashboard.
+- The device passcode is an alternative when biometric authentication fails.
+- Signing out removes the saved session and disables protection. Expired or
+  revoked sessions still require account sign-in; Face ID does not extend them.
+
+The feature stores a session token protected by Apple's Keychain `userPresence`
+access control, never an account password or biometric data. Tokens stay on this
+device and are not synced to iCloud. Native authentication prompts follow the
+device language; the settings panel follows the selected app language.
+Anyone able to authenticate with this device's biometrics or passcode can unlock
+the saved account.
+
+This is a native change. Run `ios:sync`, rebuild in Xcode, and install the new
+app. Deploying the website alone does not update the installed iPhone app.
+If Capacitor cannot read its TypeScript configuration on Node 22, use
+`NODE_OPTIONS=--experimental-strip-types npm run ios:sync` and the same prefix
+for `npm run ios:open`.
+
 ## Notifications
 
 The app target has the **Push Notifications** capability (`App/App.entitlements`,
@@ -166,6 +200,11 @@ These tests do not replace a real native build or device testing. Before release
 
 - Verify Keychain persistence after force quitting, logout deletion, and behavior
   while the device is locked; no native token should appear in localStorage.
+- Test biometric enable/disable on an existing saved session, cold launch,
+  background/return, repeated cancellation and retry, passcode fallback, biometric
+  lockout, removed enrollment, and logout followed by a different account.
+  Verify rental details cannot be seen or interacted with behind the lock,
+  including with VoiceOver. Also test backgrounding during an authentication prompt.
 - Verify keyboard appearance, dismissal, rotation, notch/home-indicator spacing,
   date inputs, VoiceOver navigation, and the app-switcher privacy cover.
 - Exercise each create/edit/delete action against a staging server, with two
@@ -182,8 +221,14 @@ The frontend tests, browser production build, iOS asset synchronization, Swift
 syntax parsing, and Xcode project/plist syntax checks were run. Native-bridge
 tests simulate the plugin contract rather than executing Apple Keychain.
 
-Full Xcode is not installed on the development machine used for this change.
-No simulator build, device install, signed IPA, TestFlight upload, or App Store
-release has been produced. The packaging smoke test used
+The Face ID simulator build was attempted with Xcode, but dependency resolution
+was blocked by `sandbox-exec: sandbox_apply: Operation not permitted` before
+Swift compilation. Biometric bridge tests use mocked authentication and do not
+verify Apple's prompts, Keychain access-control migration, or native lifecycle
+behavior. Those still require an unrestricted Xcode build and simulator/physical
+device checks before release.
+
+No device install, signed IPA, TestFlight upload, or App Store release has been
+produced here. The packaging smoke test used
 `https://rental-test.example`; run `ios:sync` with your real URLs before opening
 or distributing the project.

@@ -9,11 +9,27 @@ export const runtimeConfig = clientConfig({
   VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
   VITE_PUBLIC_APP_URL: import.meta.env.VITE_PUBLIC_APP_URL,
 }, isNative, window.location.origin);
+export type BiometricStatus = {
+  available: boolean;
+  enabled: boolean;
+  type: "face" | "touch" | "none";
+};
 const secureSession = registerPlugin<{
   getToken(options: { server: string }): Promise<{ token: string | null }>;
   setToken(options: { server: string; token: string }): Promise<void>;
   removeToken(options: { server: string }): Promise<void>;
+  getBiometricStatus(options: { server: string }): Promise<BiometricStatus>;
+  setBiometricEnabled(options: { server: string; enabled: boolean }): Promise<BiometricStatus>;
 }>("SecureSession");
+
+export function biometricStatus() {
+  return secureSession.getBiometricStatus({ server: runtimeConfig.apiBaseURL });
+}
+
+export function setBiometricEnabled(enabled: boolean) {
+  return secureSession.setBiometricEnabled({ server: runtimeConfig.apiBaseURL, enabled });
+}
+
 export const sessionStorage = createTokenStorage(
   window.localStorage,
   isNative ? {

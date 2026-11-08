@@ -26,6 +26,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+        <key>NSFaceIDUsageDescription</key>
+        <string>Use Face ID to unlock your saved Rental Management session and protect your rental information.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

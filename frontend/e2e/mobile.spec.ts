@@ -1,6 +1,14 @@
 import { test, expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
+test("browser profiles do not offer native biometric protection", async ({ page }) => {
+  await login(page);
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Edit Profile", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Biometric Unlock" })).toHaveCount(0);
+});
+
 test.describe("today's date in the header", () => {
   test.use({ timezoneId: "America/Los_Angeles" });
 

@@ -7,6 +7,8 @@ import { DataTable } from "./PaginatedEntries";
 import { t } from "./i18n";
 import { LanguageSelector } from "./LanguageSelector";
 import { TodayDate } from "./TodayDate";
+import { BiometricSettings } from "./BiometricSettings";
+import { isNative } from "./platform";
 
 const dateTime = (value: string | null) => value ? new Date(value).toLocaleString() : "-";
 
@@ -173,6 +175,9 @@ export function AdminDashboard({ user, onLogout, onUserChange }: {
           <button className="secondary" disabled={loading} onClick={() => void onLogout()}>{t("Logout")}</button>
         </div>
       </header>
+      {isNative && !user.password_change_required && (
+        <div className="card"><BiometricSettings loading={loading} onBusyChange={setLoading} /></div>
+      )}
       {error && <p role="alert" className="alert error">{t(error)}</p>}
       {message && <p role="status" className="alert success">{t(message)}</p>}
       {(showPassword || user.password_change_required) && (

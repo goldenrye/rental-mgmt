@@ -22,6 +22,7 @@ import { TenantChargeDialog } from "./TenantChargeDialog";
 import { ExtendBillDialog } from "./ExtendBillDialog";
 import { DateInput } from "./DateInput";
 import { PaymentDialog } from "./PaymentDialog";
+import { BiometricSettings } from "./BiometricSettings";
 import { DataTable } from "./PaginatedEntries";
 import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
 import { AdminDashboard } from "./AdminDashboard";
@@ -1050,6 +1051,7 @@ function App() {
             {user.role === "landlord" && (
               <EncryptionSettings user={user} loading={loading} onBusyChange={setLoading} onChanged={setUser} />
             )}
+            {isNative && <BiometricSettings loading={loading} onBusyChange={setLoading} />}
             {user.role === "landlord" && (
               <GoogleCalendarSettings loading={loading} onBusyChange={setLoading} />
             )}
