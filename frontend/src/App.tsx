@@ -23,6 +23,8 @@ import { ExtendBillDialog } from "./ExtendBillDialog";
 import { DateInput } from "./DateInput";
 import { PaymentDialog } from "./PaymentDialog";
 import { BiometricSettings } from "./BiometricSettings";
+import { PasskeyLogin, PasskeySettings } from "./PasskeySettings";
+import { loginWithPasskey } from "./passkeys";
 import { DataTable } from "./PaginatedEntries";
 import { LeaseDetailsDialog } from "./LeaseDetailsDialog";
 import { AdminDashboard } from "./AdminDashboard";
@@ -484,13 +486,16 @@ function App() {
         window.history.replaceState(null, "", window.location.pathname + window.location.search);
       }
       const token = await api.login({ email: authForm.email, password: authForm.password });
-      await storeToken(token.access_token);
-      const currentUser = await api.me();
-      setUser(currentUser);
-      if (currentUser.role === "landlord") {
-        await loadLandlordData();
-      }
+      await finishSignIn(token.access_token);
     }, authMode === "register" ? "Account created and signed in." : "Signed in.");
+  }
+
+  async function finishSignIn(token: string) {
+    await storeToken(token);
+    const currentUser = await api.me();
+    setUser(currentUser);
+    setAuthForm((current) => ({ ...current, password: "" }));
+    if (currentUser.role === "landlord") await loadLandlordData();
   }
 
   async function logout() {
@@ -904,6 +909,12 @@ function App() {
               }[authMode])}
             </button>
           </form>
+          {authMode === "login" && <PasskeyLogin loading={loading} onLogin={() => {
+            void withStatus(async () => {
+              const token = await loginWithPasskey();
+              await finishSignIn(token.access_token);
+            }, "Signed in.");
+          }} />}
           {authMode === "login" && (
             <button type="button" className="link-button" onClick={() => {
               setAuthMode("forgot");
@@ -1052,6 +1063,7 @@ function App() {
               <EncryptionSettings user={user} loading={loading} onBusyChange={setLoading} onChanged={setUser} />
             )}
             {isNative && <BiometricSettings loading={loading} onBusyChange={setLoading} />}
+            <PasskeySettings loading={loading} onBusyChange={setLoading} />
             {user.role === "landlord" && (
               <GoogleCalendarSettings loading={loading} onBusyChange={setLoading} />
             )}

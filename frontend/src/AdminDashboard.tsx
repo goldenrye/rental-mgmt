@@ -8,6 +8,7 @@ import { t } from "./i18n";
 import { LanguageSelector } from "./LanguageSelector";
 import { TodayDate } from "./TodayDate";
 import { BiometricSettings } from "./BiometricSettings";
+import { PasskeySettings } from "./PasskeySettings";
 import { isNative } from "./platform";
 
 const dateTime = (value: string | null) => value ? new Date(value).toLocaleString() : "-";
@@ -177,6 +178,9 @@ export function AdminDashboard({ user, onLogout, onUserChange }: {
       </header>
       {isNative && !user.password_change_required && (
         <div className="card"><BiometricSettings loading={loading} onBusyChange={setLoading} /></div>
+      )}
+      {!user.password_change_required && (
+        <div className="card"><PasskeySettings loading={loading} onBusyChange={setLoading} /></div>
       )}
       {error && <p role="alert" className="alert error">{t(error)}</p>}
       {message && <p role="status" className="alert success">{t(message)}</p>}

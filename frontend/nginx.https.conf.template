@@ -36,7 +36,7 @@ server {
   root /usr/share/nginx/html;
   index index.html;
 
-  location ~ ^/api/(auth/(login|register|password-reset/(request|confirm))|oauth/token)$ {
+  location ~ ^/api/(auth/(login|register|password-reset/(request|confirm)|passkeys/(options|verify))|me/passkeys/.*|oauth/token)$ {
     limit_req zone=auth burst=5 nodelay;
     limit_req_status 429;
     rewrite ^/api/(.*)$ /$1 break;
@@ -45,6 +45,12 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  # Apple requires this exact root URL, without redirects or authentication.
+  location = /.well-known/apple-app-site-association {
+    proxy_pass http://api:8000/.well-known/apple-app-site-association;
+    proxy_set_header Host $host;
   }
 
   # Same-origin API access (VITE_API_BASE_URL=/api), so the page never makes mixed-content requests.

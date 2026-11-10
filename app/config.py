@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     # Public website URL for links in emails; falls back to google_calendar_app_url.
     app_url: str = ""
+    # Stable website hostname and exact HTTPS origins. Empty keeps passkeys unavailable.
+    passkey_rp_id: str = ""
+    passkey_origins: str = ""
+    # Comma-separated Apple application identifiers (App ID prefix + bundle ID).
+    passkey_apple_app_ids: str = ""
 
     @property
     def allowed_origins(self) -> list[str]:

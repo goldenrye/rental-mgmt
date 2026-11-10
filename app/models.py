@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text, UniqueConstraint, false, func
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, LargeBinary, String, Text, UniqueConstraint, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -81,6 +81,46 @@ class LoginSession(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class PasskeyUser(Base):
+    __tablename__ = "passkey_users"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    handle: Mapped[bytes] = mapped_column(LargeBinary(32), unique=True, nullable=False)
+
+
+class PasskeyCredential(Base):
+    __tablename__ = "passkey_credentials"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary(1024), unique=True, nullable=False)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    rp_id: Mapped[str] = mapped_column(String(253), nullable=False)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    sign_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class PasskeyChallenge(Base):
+    """Short-lived, single-use ceremonies shared across API workers."""
+
+    __tablename__ = "passkey_challenges"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    challenge: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    token_version: Mapped[Optional[int]] = mapped_column()
+    session_id: Mapped[Optional[str]] = mapped_column(String(64))
+    name: Mapped[Optional[str]] = mapped_column(String(80))
+    rp_id: Mapped[str] = mapped_column(String(253), nullable=False)
+    requester: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, nullable=False)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class McpApiKey(Base):

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { createPasskeyInProfile, mockPasskeyAPI } from "./passkeyFixtures";
 
 test("native language choice survives reload without changing secure session storage", async ({ page }) => {
   const bridge = await nativeBridge(page);
@@ -36,6 +37,13 @@ async function nativeBridge(page: Page, options: {
   const calls: { plugin: string; method: string; options: Record<string, string | boolean> }[] = [];
   await page.exposeFunction("testNativeCall", async (plugin: string, method: string, args: Record<string, string | boolean>) => {
     calls.push({ plugin, method, options: args });
+    if (plugin === "Passkeys") {
+      if (method === "isSupported") return { supported: true };
+      if (rejectAuthentication) throw new Error("Passkey request was cancelled. Try again or use your password.");
+      return { id: "AQID", rawId: "AQID", type: "public-key", response: method === "register"
+        ? { clientDataJSON: "AQID", attestationObject: "BwgJ" }
+        : { clientDataJSON: "AQID", authenticatorData: "BAUG", signature: "BwgJ", userHandle: "BAUG" } };
+    }
     if (plugin === "SecureSession") {
       expect(args.server).toBe("https://rental-test.example/api");
       if (options.locked) throw new Error("Device locked");
@@ -68,6 +76,7 @@ async function nativeBridge(page: Page, options: {
       CapacitorCustomPlatform: { name: "ios" },
       Capacitor: {
         PluginHeaders: [
+          { name: "Passkeys", methods: ["isSupported", "register", "authenticate"].map((name) => ({ name, rtype: "promise" })) },
           { name: "SecureSession", methods: ["getToken", "setToken", "removeToken", "getBiometricStatus", "setBiometricEnabled"].map((name) => ({ name, rtype: "promise" })) },
           { name: "Keyboard", methods: [{ name: "addListener", rtype: "callback" }, { name: "removeListener", rtype: "callback" }] },
           { name: "Clipboard", methods: [{ name: "write", rtype: "promise" }] },
@@ -125,6 +134,31 @@ async function openProfile(page: Page) {
   await page.getByRole("button", { name: "Open profile menu" }).click();
   await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
 }
+
+test("native passkeys register and create a new secure session after logout", async ({ page }) => {
+  const bridge = await nativeBridge(page);
+  await mockPasskeyAPI(page, "native-test-token");
+  await page.goto("/");
+  await signIn(page);
+  await openProfile(page);
+  await createPasskeyInProfile(page);
+  expect(bridge.calls.some((call) => call.plugin === "Passkeys" && call.method === "register")).toBe(true);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Logout", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Login", exact: true })).toBeVisible();
+  expect(bridge.getToken()).toBeNull();
+  bridge.rejectAuthentication(true);
+  await page.getByRole("button", { name: "Sign in with a passkey", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Passkey request was cancelled");
+  expect(bridge.getToken()).toBeNull();
+  bridge.rejectAuthentication(false);
+  await page.getByRole("button", { name: "Sign in with a passkey", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Welcome, Native User" })).toBeVisible();
+  expect(bridge.getToken()).toBe("native-test-token");
+  expect(await page.evaluate(() => localStorage.getItem("rental_mgmt_token"))).toBeNull();
+  expect(bridge.calls.some((call) => call.plugin === "Passkeys" && call.method === "authenticate")).toBe(true);
+});
 
 test("biometric protection is opt-in, persists across launch, and resets on logout", async ({ page }) => {
   const bridge = await nativeBridge(page);

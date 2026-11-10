@@ -79,6 +79,7 @@ enum SessionSecurity {
 class RentalBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(SecureSessionPlugin())
+        bridge?.registerPluginInstance(PasskeysPlugin())
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }

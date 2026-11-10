@@ -13,6 +13,7 @@ database backups.
 - [Production deployment](#production-deployment)
 - [Configuration reference](#configuration-reference)
 - [Administration](#administration)
+- [Passkey sign-in](#passkey-sign-in)
 - [Database encryption](#database-encryption)
 - [Billing guide](#billing-guide)
 - [Google Calendar exports](#google-calendar-exports)
@@ -41,6 +42,7 @@ database backups.
 - Property bill filters, lease details and profile and password settings
 - English and Simplified Chinese interface, with a remembered language choice
 - Self-service password reset by emailed link, when the server has SMTP configured
+- Optional passkey sign-in with Face ID, Touch ID, or device screen lock
 - Optional Google Calendar export of newly generated rent bills, off by default per landlord
 - Optional push reminders (browser and iPhone app) before leases end and bills are due, turned on per device
 
@@ -85,6 +87,74 @@ Keep interpolation variable names identical in both languages. `npm test` checks
 catalog coverage for literal translation calls/table headings, interpolation
 variables, language detection, persistence, and mobile action-column semantics.
 Browser tests cover Chinese signup, validation, payments, and native session isolation.
+
+## Passkey sign-in
+
+Passkeys create a new rental-mgmt login session, including after logout or expiry.
+They are separate from the iPhone app's optional biometric screen lock. Password
+sign-in remains available. Face ID is handled by the device: rental-mgmt stores
+only the credential's public key, an opaque user handle, name, and usage metadata.
+Private keys may sync through your credential provider (such as iCloud Keychain);
+neither private keys nor biometric data are sent to rental-mgmt.
+
+### Server setup
+
+Passkeys are unavailable until configured. Set these public values in `.env`:
+
+```dotenv
+PASSKEY_RP_ID=rent.example.com
+PASSKEY_ORIGINS=https://rent.example.com
+# Required only for the native iPhone app. Use the signed app's actual application identifier.
+PASSKEY_APPLE_APP_IDS=ABCDE12345.com.jpi.rental-mgmt
+```
+
+Replace the examples with your website hostname and Apple App ID prefix/bundle ID.
+The RP ID is a hostname, not an API URL: omit `https://`, ports, and `/api`.
+Origins are exact comma-separated HTTPS origins with no paths or trailing slashes.
+Include `https://<RP ID>` for native Apple passkeys. Never add
+`capacitor://localhost` as a WebAuthn origin; native AuthenticationServices uses
+the associated website origin. Keep the RP ID stable: changing it makes existing
+passkeys unusable. For browser-only local development, `localhost` with an exact
+`http://localhost:<port>` origin is supported.
+
+Rebuild/redeploy the API and frontend. The API creates the new passkey tables on
+startup, without changing existing accounts or rental data. Back up the database
+before deploying as usual. The Compose API service receives all three settings.
+For native support, also follow [the iPhone passkey setup](frontend/IOS.md#passkey-sign-in).
+No production settings or Apple signing configuration are changed automatically.
+
+### Using passkeys
+
+1. Sign in with your password and open **Edit Profile > Passkeys**.
+   Super-admins have a Passkeys card on their dashboard after the required initial
+   password change.
+2. Enter a name (for example, "My iPhone"), confirm your current account password,
+   and choose **Create a Passkey**. Approve the device prompt.
+3. After signing out, choose **Sign in with a passkey** on the login page.
+   You do not need to enter an email or password.
+
+Up to ten passkeys may be registered per account. Remove one in the same settings
+section after confirming your password. Removal prevents future login with it;
+it does not end already-issued sessions or delete the entry from your credential
+provider, where you can remove it separately.
+
+Email password resets and administrator password resets remove all registered
+passkeys and pending registrations, as well as revoking sessions. An ordinary
+password change preserves passkeys; remove unwanted ones in settings.
+Deactivated accounts and accounts requiring a password change cannot use passkey
+login. Logout removes the current session, not the registered passkeys.
+
+Challenges expire in five minutes and are claimed once in the shared database,
+including on failed verification. Registration is bound to the initiating account
+and session, and requires password confirmation. Verification checks the exact
+origin, RP ID, challenge, signature, user presence/verification, account binding,
+and signature counter (including zero counters used by synced passkeys).
+The nginx auth rate limit also covers passkey ceremonies and management actions.
+Do not publish the API directly without equivalent rate limiting.
+
+Backend tests generate real ES256 WebAuthn proofs. Browser/native bridge tests
+mock authenticators, so physical-device verification and a native Xcode build
+are still required before release.
 
 ## Architecture
 
@@ -460,7 +530,7 @@ MCP data.
 
 - **Deactivate** blocks new sign-ins and revokes existing API and MCP tokens.
   Reactivating allows new sign-ins but does not restore old tokens.
-- **Reset password** revokes all of the landlord's sessions and does not reactivate a
+- **Reset password** revokes all of the landlord's sessions and passkeys and does not reactivate a
   deactivated account.
 - No rental data is deleted. Passwords are hashed and never returned. Admin actions
   record the actor, target, action and time in `admin_audit_events`, without
@@ -485,6 +555,7 @@ page says reset is unavailable and the admin's **Reset password** remains the on
   links. Each account gets at most 3 reset emails per hour, and nginx applies the
   sign-in rate limit to both reset endpoints.
 - A reset revokes every session and MCP API key, the same as a password change.
+  Unlike an ordinary password change, a reset also removes all registered passkeys.
   It does not reactivate a deactivated account, and the `admin` account (whose login
   is not an email address) cannot use it.
 - Only a SHA-256 hash of each code is stored, and the code stays out of access logs
@@ -934,9 +1005,11 @@ and `POST /me/web-push/test`, which sends to every device.
 
 ## API
 
-Interactive docs are at `/docs` on a local backend. All endpoints except
-registration, sign-in and `/health` require `Authorization: Bearer <token>`. Behind
-nginx, prefix every path with `/api`.
+Interactive docs are at `/docs` on a local backend. Account and rental endpoints
+require `Authorization: Bearer <token>`. Registration, sign-in (including passkey
+status/options/verification), password recovery, `/health`, and Apple domain
+association are public. Behind nginx, prefix API paths with `/api`; Apple's
+`/.well-known/apple-app-site-association` is also served at the website root.
 
 ### Walkthrough
 
@@ -983,6 +1056,7 @@ With `OPEN_REGISTRATION=true` (local development only), step 1 and the
 | Health | `GET /health` |
 | Auth | `POST /auth/register`, `POST /auth/login`, `POST /oauth/token` (password grant, form-encoded), `POST /auth/logout`, `POST /auth/password-reset/request`, `POST /auth/password-reset/confirm` |
 | Account | `GET /me`, `PATCH /me`, `POST /me/password` |
+| Passkeys | `GET /auth/passkeys/status`, `POST /auth/passkeys/options`, `POST /auth/passkeys/verify`, `GET /me/passkeys`, `POST /me/passkeys/register/options`, `POST /me/passkeys/register/verify`, `DELETE /me/passkeys/{key_id}` |
 | Properties | `POST /properties`, `GET /properties`, `GET/PATCH/DELETE /properties/{property_id}` |
 | Units | `POST /properties/{property_id}/units`, `GET /properties/{property_id}/units`, `GET /units`, `PATCH/DELETE /units/{unit_id}` |
 | Tenants | `POST /tenants`, `GET /tenants`, `GET/PATCH/DELETE /tenants/{tenant_id}` |

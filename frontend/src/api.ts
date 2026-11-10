@@ -212,6 +212,17 @@ export class ApiError extends Error {
   }
 }
 
+export type PasskeyRecord = { id: string; name: string; created_at: string; last_used_at: string | null };
+export type PasskeyCreation = Omit<PublicKeyCredentialCreationOptions, "challenge" | "user" | "excludeCredentials"> & {
+  challenge: string;
+  user: Omit<PublicKeyCredentialUserEntity, "id"> & { id: string };
+  excludeCredentials?: { id: string; type: "public-key" }[];
+};
+export type PasskeyRequest = Omit<PublicKeyCredentialRequestOptions, "challenge" | "allowCredentials"> & {
+  challenge: string;
+  allowCredentials?: { id: string; type: "public-key" }[];
+};
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getStoredToken();
   const headers = new Headers(options.headers);
@@ -249,6 +260,26 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  passkeyStatus: () => request<{ available: boolean; rp_id: string | null }>("/auth/passkeys/status"),
+  listPasskeys: () => request<PasskeyRecord[]>("/me/passkeys"),
+  passkeyRegistrationOptions: (current_password: string, name: string) =>
+    request<{ ceremony_id: string; publicKey: PasskeyCreation }>("/me/passkeys/register/options", {
+      method: "POST", body: JSON.stringify({ current_password, name }),
+    }),
+  verifyPasskeyRegistration: (ceremony_id: string, credential: object) =>
+    request<{ id: string }>("/me/passkeys/register/verify", {
+      method: "POST", body: JSON.stringify({ ceremony_id, credential }),
+    }),
+  passkeyLoginOptions: () =>
+    request<{ ceremony_id: string; publicKey: PasskeyRequest }>("/auth/passkeys/options", { method: "POST" }),
+  verifyPasskeyLogin: (ceremony_id: string, credential: object) =>
+    request<{ access_token: string; token_type: string }>("/auth/passkeys/verify", {
+      method: "POST", body: JSON.stringify({ ceremony_id, credential }),
+    }),
+  removePasskey: (id: string, current_password: string) =>
+    request<void>(`/me/passkeys/${encodeURIComponent(id)}`, {
+      method: "DELETE", body: JSON.stringify({ current_password }),
+    }),
   register: (payload: { email: string; full_name: string; password: string; role: UserRole; invite_code?: string }) =>
     request<User>("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
   login: (payload: { email: string; password: string }) =>

@@ -151,6 +151,9 @@ If Capacitor cannot read its TypeScript configuration on Node 22, use
 `NODE_OPTIONS=--experimental-strip-types npm run ios:sync` and the same prefix
 for `npm run ios:open`.
 
+For passwordless sign-in, see **Passkey Sign-In** below. Biometric Unlock protects
+an existing session; it does not register a passkey.
+
 ## Notifications
 
 The app target has the **Push Notifications** capability (`App/App.entitlements`,
@@ -170,6 +173,53 @@ Use a physical iPhone and check that:
   device from the server.
 - Signing out removes the device. Signing in as another landlord and turning
   notifications on moves the device to that landlord.
+
+## Passkey Sign-In
+
+Native passkeys use Apple's AuthenticationServices on iOS 16+, not WebAuthn from
+the `capacitor://localhost` WebView. The custom `Passkeys.swift` plugin is registered
+alongside `SecureSession`; it returns signed proofs to the backend. Only the
+backend can issue the new session token, which still goes into device Keychain.
+Users on iOS 15 can continue using passwords and the optional biometric app lock.
+
+Complete the [server passkey setup](../README.md#passkey-sign-in), then:
+
+1. Set `PASSKEY_APPLE_APP_IDS` on the backend to the signed app's application
+   identifier, such as `ABCDE12345.com.jpi.rental-mgmt`. The App ID prefix is
+   usually the Apple Team ID, but check your provisioning profile rather than
+   assuming they match.
+2. In Xcode, select the **App** target > **Signing & Capabilities** and add
+   **Associated Domains**. Add `webcredentials:rent.example.com`, using exactly
+   your configured RP hostname, without a scheme, path, or `/api`.
+   Xcode adds `com.apple.developer.associated-domains` to `App/App.entitlements`.
+   Enable the capability for your App ID and refresh the provisioning profile.
+3. Verify `https://rent.example.com/.well-known/apple-app-site-association`
+   returns HTTP 200 JSON with `webcredentials.apps` containing that exact app
+   identifier, without authentication or redirects. The included nginx configs
+   route this root URL to the API. A custom reverse proxy/CDN must do the same.
+4. Run `npm run ios:sync`, rebuild in Xcode, and reinstall the app. Deploying the
+   website alone cannot install the native plugin or signing entitlement.
+5. Enable iCloud Keychain (or a supported passkey provider), sign in, open
+   **Edit Profile > Passkeys**, confirm your account password, and create a passkey.
+   Sign out and use **Sign in with a passkey** to test a fresh Face ID login.
+
+The checked-in entitlements deliberately do not hard-code a deployment domain.
+Until the signing capability and association above are configured, native passkey
+requests will fail and password login remains available. Apple caches domain
+associations; check the deployed file and reinstall after fixing configuration.
+Only `webcredentials` is served; this does not enable Universal Links.
+
+Before release, test creation, logout/login, cancellation, device-passcode
+fallback, account selection, removal, password recovery, and background/return
+with the biometric app lock enabled. Verify the same passkey can sign in on the
+associated website when shared through iCloud Keychain. iOS versions before 17.4
+do not support the native exclusion list; the server still rejects a credential
+already registered to an account.
+
+The implementation's full simulator build was attempted, but this environment
+blocked Swift package resolution with `sandbox-exec: sandbox_apply: Operation
+not permitted`, before compilation. Swift syntax/project checks and mocked bridge
+tests are not a substitute for that build and real-device testing.
 
 ## Invitations
 

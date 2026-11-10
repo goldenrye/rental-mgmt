@@ -1,5 +1,36 @@
 import { test, expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
+import { createPasskeyInProfile, mockBrowserAuthenticator, mockPasskeyAPI } from "./passkeyFixtures";
+
+test("passkey registration, cancelled login, passwordless login and removal", async ({ page }) => {
+  await mockBrowserAuthenticator(page);
+  await login(page);
+  const calls = await mockPasskeyAPI(page, "test-token");
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
+  await createPasskeyInProfile(page);
+  await noOverflow(page);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Logout", exact: true }).click();
+  await page.evaluate(() => Reflect.set(window, "cancelPasskey", true));
+  await page.getByRole("button", { name: "Sign in with a passkey", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Passkey request was cancelled");
+  expect(calls.filter((path) => path === "/api/auth/passkeys/verify")).toHaveLength(0);
+  await page.evaluate(() => Reflect.set(window, "cancelPasskey", false));
+  await page.getByLabel("Email or admin username").clear();
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
+  await page.getByRole("button", { name: "Sign in with a passkey", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Welcome, Test Owner" })).toBeVisible();
+  expect(calls.filter((path) => path === "/api/auth/passkeys/verify")).toHaveLength(1);
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
+  await page.getByLabel("Current password to manage passkeys").fill("test-password");
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Remove passkey My iPhone", exact: true }).click();
+  await expect(page.getByText("Passkey removed.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove passkey My iPhone", exact: true })).toHaveCount(0);
+});
 
 test("browser profiles do not offer native biometric protection", async ({ page }) => {
   await login(page);
@@ -7,6 +38,24 @@ test("browser profiles do not offer native biometric protection", async ({ page 
   await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Edit Profile", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Biometric Unlock" })).toHaveCount(0);
+});
+
+test("rejected passkey proof cannot sign in and passkey labels translate", async ({ page }) => {
+  await mockBrowserAuthenticator(page);
+  await mockAPI(page);
+  await mockPasskeyAPI(page, "test-token");
+  await page.route("**/api/auth/passkeys/verify", (route) => route.fulfill({
+    status: 400, json: { detail: "Passkey verification failed. Try again or sign in with your password." },
+  }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Sign in with a passkey", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Passkey verification failed");
+  await expect(page.getByRole("button", { name: "Login", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("rental_mgmt_token"))).toBeNull();
+  await page.getByLabel("Language", { exact: true }).selectOption("zh-CN");
+  await expect(page.getByRole("button", { name: "使用通行密钥登录", exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("通行密钥验证失败");
+  await noOverflow(page);
 });
 
 test.describe("today's date in the header", () => {

@@ -14,7 +14,7 @@ from email.message import EmailMessage
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
 from sqlalchemy import func, select, update
 
-from app.account_access import ensure_access, revoke_all_sessions
+from app.account_access import ensure_access, revoke_all_sessions, revoke_passkeys
 from app.config import get_settings
 from app.deps import DbSession
 from app.login_throttle import client_ip
@@ -140,6 +140,7 @@ def confirm_password_reset(payload: PasswordResetConfirm, db: DbSession) -> Resp
     ensure_access(db, user).password_change_required = False
     # A reset means the old password may be known to someone else: end every session and API key.
     revoke_all_sessions(db, user)
+    revoke_passkeys(db, user)
     db.execute(update(PasswordResetToken).where(
         PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None),
     ).values(used_at=now).execution_options(synchronize_session=False))

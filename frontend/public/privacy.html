@@ -12,7 +12,7 @@
     <main>
       <p class="eyebrow"><a href="/">Rental Management</a></p>
       <h1>Privacy &amp; Terms</h1>
-      <p class="muted">Effective October 25, 2026</p>
+      <p class="muted">Effective November 10, 2026</p>
 
       <p>
         Rental Management (rental-mgmt.us) is a free tool, run by an individual, that helps
@@ -27,6 +27,7 @@
         <li><strong>Your account:</strong> name, display name, email address and a one-way hash of your password (never the password itself).</li>
         <li><strong>Rental records you enter:</strong> properties, units, leases, rent and property bills, payments, and the tenant names, emails, phone numbers and notes you add.</li>
         <li><strong>Security records:</strong> sign-in sessions, last sign-in and activity times, and IP addresses used to limit password guessing and password-reset requests.</li>
+        <li><strong>Optional passkeys:</strong> public keys, credential identifiers, opaque account identifiers, names you choose, and creation/usage metadata. Short-lived sign-in challenges and hashed IP addresses help prevent abuse. We never receive or store your passkey private keys or Face ID/Touch ID data.</li>
         <li><strong>Optional features, only if you turn them on:</strong> a Google Calendar connection token, browser push-notification subscriptions, and AI-agent (MCP) API keys, which are stored only as hashes.</li>
       </ul>
 
@@ -35,7 +36,8 @@
         Only to run the service for you: show your records, generate bills, send password-reset
         emails and the reminders you enable, and keep accounts secure. We do not sell or rent your
         data, show ads, or use analytics or tracking cookies. Your sign-in token is kept in your
-        browser's local storage, not in a cookie.
+        browser's local storage, not in a cookie. The native iPhone app instead stores its
+        sign-in token in the device's Keychain.
       </p>
       <p>
         The administrator can see each account's name, email, status and sign-in activity in
@@ -49,6 +51,7 @@
         <li><strong>Google (Gmail)</strong> delivers password-reset emails, so it sees your email address and the reset message.</li>
         <li><strong>Google Calendar</strong>, only if you connect it, receives the rent-bill events you choose to export.</li>
         <li><strong>Your browser's push service</strong> (Apple, Google or Mozilla), only if you enable reminders, delivers notifications that contain counts and dates, not tenant details.</li>
+        <li><strong>Your passkey provider</strong>, such as Apple's iCloud Keychain, manages private keys and may sync them between your devices according to your settings. Rental Management verifies signed login proofs using the public key.</li>
       </ul>
 
       <h3>How it is protected</h3>

@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import selectinload
 
-from app.account_access import ensure_access, revoke_all_sessions, utc
+from app.account_access import ensure_access, revoke_all_sessions, revoke_passkeys, utc
 from app.deps import DbSession, SuperAdmin
 from app.invites import create_invite, invite_read
 from app.models import AdminAuditEvent, LandlordInvite, LoginSession, User, UserAccess, UserRole
@@ -82,6 +82,7 @@ def reset_landlord_password(user_id: int, payload: AdminPasswordReset, db: DbSes
     user = landlord_or_404(db, user_id)
     user.hashed_password = hash_password(payload.new_password)
     revoke_all_sessions(db, user)
+    revoke_passkeys(db, user)
     db.add(AdminAuditEvent(actor_id=admin.id, target_id=user.id, action="reset_password"))
     db.commit()
     return Response(status_code=204)
