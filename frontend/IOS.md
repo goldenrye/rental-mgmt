@@ -135,8 +135,11 @@ protection requires device authentication. Once enabled:
 - On canceled cold-start authentication, the secure-storage screen offers
   **Try Again**, without loading the dashboard.
 - The device passcode is an alternative when biometric authentication fails.
-- Signing out removes the saved session and disables protection. Expired or
-  revoked sessions still require account sign-in; Face ID does not extend them.
+- Signing out removes the saved session but remembers the biometric preference
+  for this device and API. Signed-out screens do not lock. The next sign-in
+  stores the session with the remembered protection, even for a different account.
+  Turn the switch off explicitly to disable it. Expired or revoked sessions still
+  require account sign-in; Face ID does not extend them.
 
 The feature stores a session token protected by Apple's Keychain `userPresence`
 access control, never an account password or biometric data. Tokens stay on this
@@ -203,11 +206,40 @@ Complete the [server passkey setup](../README.md#passkey-sign-in), then:
    **Edit Profile > Passkeys**, confirm your account password, and create a passkey.
    Sign out and use **Sign in with a passkey** to test a fresh Face ID login.
 
-The checked-in entitlements deliberately do not hard-code a deployment domain.
+Verify the hostname in `App/App.entitlements` matches the deployed RP ID.
 Until the signing capability and association above are configured, native passkey
 requests will fail and password login remains available. Apple caches domain
 associations; check the deployed file and reinstall after fixing configuration.
 Only `webcredentials` is served; this does not enable Universal Links.
+
+### Disabled Create Button
+
+The current-password field takes your rental-mgmt **login password**, not the
+iPhone passcode. It confirms enrollment or removal; it cannot enable server support.
+The form now gives a specific reason when setup is unavailable and offers
+**Retry Passkey Setup**, which preserves your name/password draft.
+
+For `rental-mgmt.us`, the server's deployment `.env` must include:
+
+```dotenv
+PASSKEY_RP_ID=rental-mgmt.us
+PASSKEY_ORIGINS=https://rental-mgmt.us
+# Verify the App ID prefix against the signed app's application-identifier entitlement.
+PASSKEY_APPLE_APP_IDS=2U5R5BXJ37.com.jpi.rental-mgmt
+```
+
+Recreate the API container after changing its environment; `docker compose restart`
+does not load changed Compose environment values:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build api frontend
+curl https://rental-mgmt.us/api/auth/passkeys/status
+curl https://rental-mgmt.us/.well-known/apple-app-site-association
+```
+
+Expect `available: true` with RP ID `rental-mgmt.us`, and an association containing
+the signed app's identifier. Then retry the setup check in the app. If the message
+instead reports a missing native plugin, sync/rebuild/reinstall the iPhone app.
 
 Before release, test creation, logout/login, cancellation, device-passcode
 fallback, account selection, removal, password recovery, and background/return

@@ -1,31 +1,54 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { PasskeyRecord } from "./api";
-import { passkeyError, registerPasskey, supportsPasskeys } from "./passkeys";
+import { passkeyError, registerPasskey, passkeySupportIssue } from "./passkeys";
 import { t } from "./i18n";
 
 function usePasskeyAvailability() {
-  const [available, setAvailable] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState({ available: false, checking: true, issue: "Checking passkey setup..." });
   useEffect(() => {
     let active = true;
-    Promise.all([api.passkeyStatus(), supportsPasskeys()]).then(([server, device]) => {
-      if (active) setAvailable(server.available && device);
-    }).catch(() => {});
+    Promise.all([api.passkeyStatus(), passkeySupportIssue()]).then(([server, deviceIssue]) => {
+      const issue = !server.available
+        ? "Passkeys are not configured on the server. Set PASSKEY_RP_ID and PASSKEY_ORIGINS, then restart the API."
+        : deviceIssue ?? "";
+      if (active) setState({ available: !issue, checking: false, issue });
+    }).catch(() => {
+      if (active) setState({ available: false, checking: false,
+        issue: "Unable to check server passkey setup. Check your connection and that the API is updated, then retry." });
+    });
     return () => { active = false; };
-  }, []);
-  return available;
+  }, [attempt]);
+  return { ...state, retry: () => {
+    setState({ available: false, checking: true, issue: "Checking passkey setup..." });
+    setAttempt((value) => value + 1);
+  } };
+}
+
+function PasskeyAvailability({ state, loading }: {
+  state: ReturnType<typeof usePasskeyAvailability>; loading: boolean;
+}) {
+  if (state.available) return null;
+  return (
+    <div>
+      <p className="help-text" role="status">{t(state.issue)}</p>
+      {!state.checking && <button type="button" className="secondary" disabled={loading} onClick={state.retry}>
+        {t("Retry Passkey Setup")}
+      </button>}
+    </div>
+  );
 }
 
 export function PasskeyLogin({ loading, onLogin }: { loading: boolean; onLogin: () => void }) {
-  const available = usePasskeyAvailability();
+  const availability = usePasskeyAvailability();
   return (
     <div className="form-section">
-      <button type="button" className="secondary" disabled={loading || !available} onClick={onLogin}>
+      <button type="button" className="secondary" disabled={loading || !availability.available} onClick={onLogin}>
         {t("Sign in with a passkey")}
       </button>
-      <p className="help-text">{t(available
-        ? "Use Face ID, Touch ID, or your device screen lock. Register a passkey in your profile first."
-        : "Passkey sign-in needs server setup and a supported browser or updated iPhone app.")}</p>
+      {availability.available && <p className="help-text">{t("Use Face ID, Touch ID, or your device screen lock. Register a passkey in your profile first.")}</p>}
+      <PasskeyAvailability state={availability} loading={loading} />
     </div>
   );
 }
@@ -33,7 +56,7 @@ export function PasskeyLogin({ loading, onLogin }: { loading: boolean; onLogin: 
 export function PasskeySettings({ loading, onBusyChange }: {
   loading: boolean; onBusyChange: (busy: boolean) => void;
 }) {
-  const available = usePasskeyAvailability();
+  const availability = usePasskeyAvailability();
   const [keys, setKeys] = useState<PasskeyRecord[]>([]);
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -54,6 +77,7 @@ export function PasskeySettings({ loading, onBusyChange }: {
     setError("");
     setMessage("");
     if (!password) { setError("Enter your current password to manage passkeys."); return; }
+    if (!key && !availability.available) return;
     if (!key && !name.trim()) { setError("Enter a passkey name."); return; }
     if (key && !window.confirm(t("Remove this passkey? It will no longer sign in to this account."))) return;
     busy.current = true;
@@ -85,7 +109,7 @@ export function PasskeySettings({ loading, onBusyChange }: {
         </div>
       ))}
       <label>{t("Passkey name")}
-        <input value={name} maxLength={80} disabled={loading || !available}
+        <input value={name} maxLength={80} disabled={loading}
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} />
       </label>
@@ -94,10 +118,11 @@ export function PasskeySettings({ loading, onBusyChange }: {
           disabled={loading} onChange={(event) => setPassword(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} />
       </label>
-      <button type="button" className="secondary" disabled={loading || !available} onClick={() => void change()}>
+      <p className="help-text">{t("Use your rental-mgmt login password, not your iPhone passcode. Your password confirms changes; it does not enable server passkey support.")}</p>
+      <button type="button" className="secondary" disabled={loading || !availability.available} onClick={() => void change()}>
         {t("Create a Passkey")}
       </button>
-      {!available && <p className="help-text">{t("Passkey sign-in needs server setup and a supported browser or updated iPhone app.")}</p>}
+      <PasskeyAvailability state={availability} loading={loading} />
       {error && <p className="alert error" role="alert">{t(error)}</p>}
       {message && <p className="alert success" role="status">{t(message)}</p>}
     </section>

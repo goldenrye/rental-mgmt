@@ -47,7 +47,7 @@ export function BiometricSettings({ loading, onBusyChange }: {
         {t("Require Face ID or Touch ID on this device")}
       </label>
       {status && !status.available && <p className="help-text">{t("Set up Face ID or Touch ID in iPhone Settings first.")}</p>}
-      <p className="help-text">{t("Signing out turns this app lock off. Expired sessions require a new sign-in with your password or a registered passkey. This app lock never stores your password or biometric data.")}</p>
+      <p className="help-text">{t("This device remembers your choice after sign-out. Protection resumes after your next sign-in. Signed-out screens stay accessible. Your password and biometric data are never stored by this app lock.")}</p>
       {error && <p className="alert error" role="alert">{t(error)}</p>}
     </section>
   );

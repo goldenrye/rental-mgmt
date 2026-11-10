@@ -47,7 +47,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
-        if let server = SessionSecurity.activeServer, SessionSecurity.enabled(server) {
+        if SessionSecurity.requiresUnlock {
             showLockControls()
         } else {
             removeCover()
@@ -61,7 +61,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             removeCover()
             return
         }
-        if let server = SessionSecurity.activeServer, SessionSecurity.enabled(server) {
+        if SessionSecurity.requiresUnlock {
             showLockControls()
             if !automaticallyAttempted {
                 automaticallyAttempted = true
@@ -115,7 +115,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     @objc private func unlock() {
-        guard let server = SessionSecurity.activeServer, unlockContext == nil,
+        guard SessionSecurity.requiresUnlock, let server = SessionSecurity.activeServer, unlockContext == nil,
               !SessionSecurity.authenticationInProgress,
               window?.windowScene?.activationState == .foregroundActive else { return }
         let context = LAContext()

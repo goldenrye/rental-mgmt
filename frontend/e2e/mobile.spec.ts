@@ -40,6 +40,36 @@ test("browser profiles do not offer native biometric protection", async ({ page 
   await expect(page.getByRole("heading", { name: "Biometric Unlock" })).toHaveCount(0);
 });
 
+test("passkey setup explains disabled creation and retry preserves drafts", async ({ page }) => {
+  await mockBrowserAuthenticator(page);
+  await login(page);
+  await mockPasskeyAPI(page, "test-token");
+  let ready = false;
+  let networkError = false;
+  await page.route("**/api/auth/passkeys/status", (route) => route.fulfill(networkError
+    ? { status: 503, json: { detail: "Unavailable" } }
+    : { json: { available: ready, rp_id: ready ? "rental-test.example" : null } }));
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Edit Profile", exact: true }).click();
+  await expect(page.getByText("Passkeys are not configured on the server.", { exact: false })).toBeVisible();
+  await page.getByLabel("Passkey name", { exact: true }).fill("My iPhone");
+  await page.getByLabel("Current password to manage passkeys").fill("test-password");
+  await expect(page.getByText("Use your rental-mgmt login password", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create a Passkey", exact: true })).toBeDisabled();
+  networkError = true;
+  await page.getByRole("button", { name: "Retry Passkey Setup", exact: true }).click();
+  await expect(page.getByText("Unable to check server passkey setup.", { exact: false })).toBeVisible();
+  networkError = false;
+  ready = true;
+  await page.getByRole("button", { name: "Retry Passkey Setup", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Create a Passkey", exact: true })).toBeEnabled();
+  await expect(page.getByLabel("Passkey name", { exact: true })).toHaveValue("My iPhone");
+  await expect(page.getByLabel("Current password to manage passkeys")).toHaveValue("test-password");
+  await page.getByRole("button", { name: "Create a Passkey", exact: true }).click();
+  await expect(page.getByText("Passkey registered. You can use it on the sign-in page.", { exact: true })).toBeVisible();
+  await noOverflow(page);
+});
+
 test("rejected passkey proof cannot sign in and passkey labels translate", async ({ page }) => {
   await mockBrowserAuthenticator(page);
   await mockAPI(page);

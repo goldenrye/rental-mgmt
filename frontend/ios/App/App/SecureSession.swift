@@ -12,6 +12,11 @@ enum SessionSecurity {
     static let queue = DispatchQueue(label: "com.rentalmgmt.session", qos: .userInitiated)
     // Accessed on the main thread; the setting itself is scoped to the API in UserDefaults.
     static var activeServer: String?
+    static var hasSession = false
+    static var requiresUnlock: Bool {
+        guard let server = activeServer else { return false }
+        return hasSession && enabled(server)
+    }
     static var authenticationInProgress = false
     static var service: String { "\(Bundle.main.bundleIdentifier ?? "com.rentalmgmt.app").session" }
     static var reason: String { text("Unlock Rental Management", "解锁租赁管理") }
@@ -116,13 +121,17 @@ public class SecureSessionPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let server = server(call) else { return }
         SessionSecurity.queue.async {
             let (status, token) = SessionSecurity.read(server)
-            if status == errSecItemNotFound {
-                SessionSecurity.setEnabled(false, server: server)
-                call.resolve(["token": NSNull()])
-            } else if status == errSecSuccess, let token = token {
-                call.resolve(["token": token])
-            } else {
-                call.reject("Unable to read the secure session.", String(status))
+            DispatchQueue.main.async {
+                if status == errSecItemNotFound {
+                    // A signed-out app remembers the preference but has nothing to unlock.
+                    SessionSecurity.hasSession = false
+                    call.resolve(["token": NSNull()])
+                } else if status == errSecSuccess, let token = token {
+                    SessionSecurity.hasSession = true
+                    call.resolve(["token": token])
+                } else {
+                    call.reject("Unable to read the secure session.", String(status))
+                }
             }
         }
     }
@@ -139,8 +148,12 @@ public class SecureSessionPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         SessionSecurity.queue.async {
             let status = SessionSecurity.write(token, server: server, protected: SessionSecurity.enabled(server))
-            if status == errSecSuccess { call.resolve() }
-            else { call.reject("Unable to store the secure session.", String(status)) }
+            DispatchQueue.main.async {
+                if status == errSecSuccess {
+                    SessionSecurity.hasSession = true
+                    call.resolve()
+                } else { call.reject("Unable to store the secure session.", String(status)) }
+            }
         }
     }
 
@@ -152,11 +165,13 @@ public class SecureSessionPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let server = server(call) else { return }
         SessionSecurity.queue.async {
             let status = SecItemDelete(SessionSecurity.query(server) as CFDictionary)
-            if status == errSecSuccess || status == errSecItemNotFound {
-                SessionSecurity.setEnabled(false, server: server)
-                call.resolve()
-            } else {
-                call.reject("Unable to remove the secure session.", String(status))
+            DispatchQueue.main.async {
+                if status == errSecSuccess || status == errSecItemNotFound {
+                    SessionSecurity.hasSession = false
+                    call.resolve()
+                } else {
+                    call.reject("Unable to remove the secure session.", String(status))
+                }
             }
         }
     }

@@ -23,7 +23,7 @@ test("native language choice survives reload without changing secure session sto
 
 // Exercises the JS/native contract, not Apple's Keychain implementation.
 async function nativeBridge(page: Page, options: {
-  locked?: boolean; admin?: boolean; biometricAvailable?: boolean;
+  locked?: boolean; admin?: boolean; biometricAvailable?: boolean; passkeysSupported?: boolean;
 } = {}) {
   let token: string | null = null;
   let biometricEnabled = false;
@@ -38,7 +38,7 @@ async function nativeBridge(page: Page, options: {
   await page.exposeFunction("testNativeCall", async (plugin: string, method: string, args: Record<string, string | boolean>) => {
     calls.push({ plugin, method, options: args });
     if (plugin === "Passkeys") {
-      if (method === "isSupported") return { supported: true };
+      if (method === "isSupported") return { supported: options.passkeysSupported ?? true };
       if (rejectAuthentication) throw new Error("Passkey request was cancelled. Try again or use your password.");
       return { id: "AQID", rawId: "AQID", type: "public-key", response: method === "register"
         ? { clientDataJSON: "AQID", attestationObject: "BwgJ" }
@@ -48,13 +48,12 @@ async function nativeBridge(page: Page, options: {
       expect(args.server).toBe("https://rental-test.example/api");
       if (options.locked) throw new Error("Device locked");
       if (method === "getToken") {
-        if (biometricEnabled && rejectAuthentication) throw new Error("Authentication cancelled");
+        if (token && biometricEnabled && rejectAuthentication) throw new Error("Authentication cancelled");
         return { token };
       }
       if (method === "setToken") token = String(args.token);
       if (method === "removeToken") {
         token = null;
-        biometricEnabled = false;
       }
       if (method === "getBiometricStatus") return biometricStatus();
       if (method === "setBiometricEnabled") {
@@ -160,7 +159,7 @@ test("native passkeys register and create a new secure session after logout", as
   expect(bridge.calls.some((call) => call.plugin === "Passkeys" && call.method === "authenticate")).toBe(true);
 });
 
-test("biometric protection is opt-in, persists across launch, and resets on logout", async ({ page }) => {
+test("biometric preference persists through logout, signed-out launch, and new sign-in", async ({ page }) => {
   const bridge = await nativeBridge(page);
   await page.goto("/");
   await signIn(page);
@@ -183,10 +182,36 @@ test("biometric protection is opt-in, persists across launch, and resets on logo
   await page.getByRole("button", { name: "Open profile menu" }).click();
   await page.getByRole("button", { name: "Logout", exact: true }).click();
   await expect(page.getByRole("button", { name: "Login", exact: true })).toBeVisible();
-  expect(bridge.biometricStatus().enabled).toBe(false);
+  expect(bridge.biometricStatus().enabled).toBe(true);
   expect(bridge.getToken()).toBeNull();
   expect(bridge.calls.filter((call) => call.method === "setBiometricEnabled").map((call) => call.options.enabled))
     .toEqual([true, false, true]);
+  bridge.rejectAuthentication(true);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Login", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Unable to open secure storage" })).toHaveCount(0);
+  bridge.rejectAuthentication(false);
+  await signIn(page);
+  await openProfile(page);
+  await expect(toggle).toBeChecked();
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: "Logout", exact: true }).click();
+  await signIn(page);
+  await openProfile(page);
+  await expect(toggle).not.toBeChecked();
+});
+
+test("native passkey setup distinguishes unsupported iOS from server setup", async ({ page }) => {
+  await nativeBridge(page, { passkeysSupported: false });
+  await mockPasskeyAPI(page, "native-test-token");
+  await page.goto("/");
+  await signIn(page);
+  await openProfile(page);
+  await expect(page.getByText("Passkeys require iOS 16 or later.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create a Passkey", exact: true })).toBeDisabled();
 });
 
 test("cancelled biometric changes preserve the setting and protected startup fails closed", async ({ page }) => {

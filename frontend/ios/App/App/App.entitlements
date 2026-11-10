@@ -5,5 +5,10 @@
 	<!-- Xcode switches this to "production" when archiving for TestFlight or the App Store. -->
 	<key>aps-environment</key>
 	<string>development</string>
+	<!-- Passkeys: must match PASSKEY_RP_ID on the server. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:rental-mgmt.us</string>
+	</array>
 </dict>
 </plist>

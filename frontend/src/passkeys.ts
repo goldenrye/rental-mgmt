@@ -9,12 +9,20 @@ const nativePasskeys = registerPlugin<{
   authenticate(options: { publicKey: PasskeyRequest }): Promise<object>;
 }>("Passkeys");
 
-export async function supportsPasskeys() {
+export async function passkeySupportIssue(): Promise<string | null> {
   if (isNative) {
-    if (!Capacitor.isPluginAvailable("Passkeys")) return false;
-    try { return (await nativePasskeys.isSupported()).supported; } catch { return false; }
+    if (!Capacitor.isPluginAvailable("Passkeys")) return "This iPhone app is missing passkey support. Sync, rebuild, and reinstall the app.";
+    try {
+      return (await nativePasskeys.isSupported()).supported ? null : "Passkeys require iOS 16 or later.";
+    } catch {
+      return "Unable to check iPhone passkey support. Restart or update the app, then retry.";
+    }
   }
-  return window.isSecureContext && typeof window.PublicKeyCredential !== "undefined" && !!navigator.credentials;
+  if (!window.isSecureContext) return "Open this website over HTTPS to use passkeys.";
+  if (typeof window.PublicKeyCredential === "undefined" || !navigator.credentials?.create || !navigator.credentials?.get) {
+    return "This browser does not support passkeys. Use an up-to-date Safari, Chrome, or Edge browser.";
+  }
+  return null;
 }
 
 export function decodePasskeyBytes(value: string): ArrayBuffer {
